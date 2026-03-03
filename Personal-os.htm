@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ARIA — Personal OS Agent</title>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f7f5f2;--surface:#fff;--surface2:#f2f0ec;
+  --border:#e4e0d8;--border2:#ece9e2;
+  --txt:#1a1814;--txt2:#6b6459;--muted:#9e9589;
+  --amber:#d97706;--amber2:#b45309;--amber-bg:#fffbf5;
+  --violet:#7c3aed;--violet-bg:#f5f3ff;
+  --teal:#0f766e;--teal-bg:#f0fdfa;
+  --rose:#be185d;--rose-bg:#fdf2f8;
+  --sage:#4d7c0f;--sage-bg:#f7fee7;
+  --slate:#475569;--slate-bg:#f8fafc;
+  --green:#059669;--green-bg:#d1fae5;
+  --red:#991b1b;--red-bg:#fee2e2;
+  --blue:#1d4ed8;--blue-bg:#eff6ff;
+  --shadow:0 1px 3px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:0 4px 14px rgba(0,0,0,.09),0 2px 6px rgba(0,0,0,.04);
+  --r:10px;--r2:6px;
+}
+html,body{height:100%;background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--txt);-webkit-font-smoothing:antialiased}
+.layout{display:grid;grid-template-columns:290px 1fr;height:100vh;overflow:hidden}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
+.sb-head{padding:24px 20px 18px;border-bottom:1px solid var(--border2)}
+.logo{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.logo-icon{width:32px;height:32px;background:var(--txt);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.logo-icon svg{width:17px;height:17px}
+.logo-name{font-family:'Lora',serif;font-size:17px;font-weight:600;letter-spacing:-.3px}
+.logo-sub{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.sb-label{font-size:11px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
+.mode-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:0}
+.mode-btn{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 6px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r2);font-family:'DM Sans',sans-serif;font-size:11px;font-weight:500;color:var(--txt2);cursor:pointer;transition:all .15s;outline:none}
+.mode-btn svg{width:17px;height:17px}
+.mode-btn:hover{border-color:var(--amber);color:var(--amber);background:var(--amber-bg)}
+.mode-btn.active-chat   {border-color:var(--amber);color:var(--amber);background:var(--amber-bg)}
+.mode-btn.active-goals  {border-color:var(--teal);color:var(--teal);background:var(--teal-bg)}
+.mode-btn.active-habits {border-color:var(--violet);color:var(--violet);background:var(--violet-bg)}
+.mode-btn.active-reflect{border-color:var(--rose);color:var(--rose);background:var(--rose-bg)}
+.mode-btn.active-plan   {border-color:var(--sage);color:var(--sage);background:var(--sage-bg)}
+.mode-btn.active-memory {border-color:var(--slate);color:var(--slate);background:var(--slate-bg)}
+.sb-sec{padding:16px 20px;border-bottom:1px solid var(--border2)}
+.sb-sec:last-child{border-bottom:none}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:500}
+.badge-idle{background:var(--surface2);color:var(--muted)}
+.badge-run{background:#fef3c7;color:#92400e}
+.badge-done{background:var(--green-bg);color:#065f46}
+.badge-err{background:var(--red-bg);color:var(--red)}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.badge-run .dot{animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.stat-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:2px}
+.stat-box{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r2);padding:9px 6px;text-align:center}
+.stat-n{font-family:'Lora',serif;font-size:19px;font-weight:500;line-height:1}
+.stat-l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-top:3px}
+.recent-list{display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto}
+.recent-item{display:flex;align-items:flex-start;gap:7px;padding:7px 9px;background:var(--surface2);border-radius:var(--r2);font-size:12px;color:var(--txt2);cursor:pointer;transition:all .12s;line-height:1.4}
+.recent-item:hover{background:var(--amber-bg);color:var(--amber)}
+.ri-dot{width:5px;height:5px;border-radius:50%;background:var(--muted);flex-shrink:0;margin-top:5px}
+.muted-note{font-size:12px;color:var(--muted);font-style:italic}
+.memory-mini{display:flex;flex-direction:column;gap:4px;max-height:100px;overflow-y:auto;margin-bottom:10px}
+.mem-tag{font-size:11px;color:var(--txt2);padding:4px 8px;background:var(--surface2);border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mem-tag.goals-tag{border-left:2px solid var(--amber)}
+.mem-tag.habits-tag{border-left:2px solid var(--violet)}
+.mem-tag.decisions-tag{border-left:2px solid var(--teal)}
+.mem-tag.insights-tag{border-left:2px solid var(--muted)}
+.mem-add{display:flex;gap:5px;flex-wrap:wrap}
+.mem-input{flex:1;min-width:80px;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--r2);font-family:'DM Sans',sans-serif;font-size:12px;color:var(--txt);background:var(--surface);outline:none}
+.mem-input:focus{border-color:var(--amber)}
+.mem-input::placeholder{color:var(--muted)}
+.mem-sel{padding:5px 6px;border:1.5px solid var(--border);border-radius:var(--r2);font-family:'DM Sans',sans-serif;font-size:11px;color:var(--txt2);background:var(--surface);outline:none;cursor:pointer}
+.mem-add-btn{padding:5px 11px;background:var(--txt);border:none;border-radius:var(--r2);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
+.mem-add-btn:hover{background:#2d2a26}
+.new-btn{display:flex;align-items:center;gap:7px;width:100%;padding:9px 11px;background:transparent;border:1.5px dashed var(--border);border-radius:var(--r2);font-family:'DM Sans',sans-serif;font-size:12.5px;color:var(--txt2);cursor:pointer;transition:all .15s}
+.new-btn:hover{border-color:var(--amber);color:var(--amber);background:var(--amber-bg)}
+.main{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:var(--bg)}
+.topbar{padding:13px 28px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.tl{display:flex;align-items:center;gap:10px}
+.mode-pill{display:flex;align-items:center;gap:6px;padding:4px 11px;border:1px solid var(--border);border-radius:20px;font-size:12px;font-weight:500;background:var(--surface);box-shadow:var(--shadow)}
+.mode-pill.chat   {color:var(--amber);border-color:#fde68a;background:var(--amber-bg)}
+.mode-pill.goals  {color:var(--teal);border-color:#99f6e4;background:var(--teal-bg)}
+.mode-pill.habits {color:var(--violet);border-color:#ddd6fe;background:var(--violet-bg)}
+.mode-pill.reflect{color:var(--rose);border-color:#fbcfe8;background:var(--rose-bg)}
+.mode-pill.plan   {color:var(--sage);border-color:#d9f99d;background:var(--sage-bg)}
+.mode-pill.memory {color:var(--slate);border-color:#cbd5e1;background:var(--slate-bg)}
+.ghost-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:transparent;border:1.5px solid var(--border);border-radius:var(--r2);font-family:'DM Sans',sans-serif;font-size:12.5px;font-weight:500;color:var(--txt2);cursor:pointer;transition:all .15s;outline:none}
+.ghost-btn:hover{background:var(--surface);border-color:var(--muted)}
+.msgs-wrap{flex:1;overflow-y:auto;padding:28px 0;scroll-behavior:smooth}
+.msgs{max-width:880px;margin:0 auto;padding:0 28px;display:flex;flex-direction:column}
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:400px;text-align:center;padding:20px 0}
+.w-icon{width:62px;height:62px;background:var(--txt);border-radius:16px;display:flex;align-items:center;justify-content:center;margin-bottom:18px;box-shadow:var(--shadow-md)}
+.w-icon svg{width:32px;height:32px}
+.welcome h2{font-family:'Lora',serif;font-size:26px;font-weight:500;margin-bottom:8px;letter-spacing:-.4px}
+.welcome p{font-size:14.5px;color:var(--txt2);line-height:1.65;max-width:460px;margin-bottom:26px}
+.hint-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;width:100%;max-width:600px}
+.hint{display:flex;align-items:flex-start;gap:10px;padding:13px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);text-align:left;cursor:pointer;transition:all .15s;box-shadow:var(--shadow)}
+.hint:hover{transform:translateY(-1px);box-shadow:var(--shadow-md)}
+.hint.h-chat:hover   {border-color:var(--amber);background:var(--amber-bg)}
+.hint.h-goals:hover  {border-color:var(--teal);background:var(--teal-bg)}
+.hint.h-habits:hover {border-color:var(--violet);background:var(--violet-bg)}
+.hint.h-reflect:hover{border-color:var(--rose);background:var(--rose-bg)}
+.hint.h-plan:hover   {border-color:var(--sage);background:var(--sage-bg)}
+.hint.h-memory:hover {border-color:var(--slate);background:var(--slate-bg)}
+.hint-em{font-size:20px;flex-shrink:0;margin-top:1px}
+.hint strong{display:block;font-size:12.5px;font-weight:500;margin-bottom:2px}
+.hint small{font-size:11px;color:var(--muted)}
+.msg-row{display:flex;gap:12px;padding:18px 0;border-bottom:1px solid var(--border2);animation:fadein .3s ease}
+.msg-row:last-child{border-bottom:none}
+@keyframes fadein{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+.av{width:32px;height:32px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;margin-top:2px}
+.av-agent{background:var(--txt);color:#fff}
+.av-user{background:var(--amber);color:#fff}
+.msg-body{flex:1;min-width:0}
+.msg-who{font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px;display:flex;align-items:center;gap:7px}
+.msg-mode-tag{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:500;text-transform:uppercase;letter-spacing:.3px}
+.tag-chat   {background:var(--amber-bg);color:var(--amber)}
+.tag-goals  {background:var(--teal-bg);color:var(--teal)}
+.tag-habits {background:var(--violet-bg);color:var(--violet)}
+.tag-reflect{background:var(--rose-bg);color:var(--rose)}
+.tag-plan   {background:var(--sage-bg);color:var(--sage)}
+.tag-memory {background:var(--slate-bg);color:var(--slate)}
+.msg-time{font-weight:400;font-size:11px;color:var(--muted)}
+.msg-content{font-size:14px;line-height:1.7;color:var(--txt)}
+.thinking-row{display:flex;gap:12px;padding:18px 0}
+.dots{display:flex;gap:4px;align-items:center}
+.dots span{width:6px;height:6px;background:var(--muted);border-radius:50%;animation:bonce 1.2s infinite}
+.dots span:nth-child(2){animation-delay:.15s}
+.dots span:nth-child(3){animation-delay:.3s}
+@keyframes bonce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
+.card{display:flex;align-items:center;gap:9px;padding:10px 13px;border-radius:var(--r);margin:4px 0;font-size:13px;font-weight:500}
+.card-ok  {background:var(--green-bg);color:#065f46;border:1px solid #a7f3d0}
+.card-work{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.card-info{background:var(--violet-bg);color:#5b21b6;border:1px solid #ddd6fe}
+.card-err {background:var(--red-bg);color:var(--red);border:1px solid #fecaca}
+
+/* ═══════════════════════════
+   STRUCTURED RESPONSE LAYOUT
+═══════════════════════════ */
+.resp-wrap{margin:10px 0 6px;display:flex;flex-direction:column;gap:0}
+.resp-toolbar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-bottom:none;border-radius:var(--r) var(--r) 0 0}
+.resp-toolbar-left{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600}
+.resp-toolbar-left.chat   {color:var(--amber)}
+.resp-toolbar-left.goals  {color:var(--teal)}
+.resp-toolbar-left.habits {color:var(--violet)}
+.resp-toolbar-left.reflect{color:var(--rose)}
+.resp-toolbar-left.plan   {color:var(--sage)}
+.resp-toolbar-left.memory {color:var(--slate)}
+.copy-btn{background:none;border:1px solid var(--border);cursor:pointer;font-size:11px;color:var(--muted);font-family:'DM Sans',sans-serif;display:flex;align-items:center;gap:4px;padding:3px 9px;border-radius:4px;transition:all .15s}
+.copy-btn:hover{background:var(--border);color:var(--txt)}
+.resp-body{background:var(--surface);border:1px solid var(--border);border-radius:0 0 var(--r) var(--r);overflow:hidden}
+
+/* Section blocks */
+.rs-section{border-bottom:1px solid var(--border2)}
+.rs-section:last-child{border-bottom:none}
+.rs-section-header{display:flex;align-items:center;gap:10px;padding:13px 18px;background:var(--surface2);cursor:pointer;user-select:none;transition:background .12s}
+.rs-section-header:hover{background:#ece9e3}
+.rs-section-icon{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.rs-section-icon.amber {background:#fef3c7;color:var(--amber)}
+.rs-section-icon.teal  {background:#ccfbf1;color:var(--teal)}
+.rs-section-icon.violet{background:#ede9fe;color:var(--violet)}
+.rs-section-icon.rose  {background:#fce7f3;color:var(--rose)}
+.rs-section-icon.sage  {background:#dcfce7;color:var(--sage)}
+.rs-section-icon.slate {background:#e2e8f0;color:var(--slate)}
+.rs-section-icon.green {background:#d1fae5;color:var(--green)}
+.rs-section-icon.blue  {background:#dbeafe;color:var(--blue)}
+.rs-section-icon.red   {background:#fee2e2;color:var(--red)}
+.rs-section-icon.muted {background:var(--surface2);color:var(--muted);border:1px solid var(--border)}
+.rs-section-title{font-size:13px;font-weight:600;color:var(--txt);flex:1}
+.rs-section-chevron{color:var(--muted);transition:transform .2s;flex-shrink:0}
+.rs-section-chevron.open{transform:rotate(90deg)}
+.rs-section-body{padding:16px 18px;border-top:1px solid var(--border2);display:flex;flex-direction:column;gap:10px}
+.rs-section-body.collapsed{display:none}
+
+/* Content primitives */
+.rs-para{font-size:13.5px;line-height:1.72;color:var(--txt)}
+.rs-kv-grid{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:start}
+.rs-kv-key{font-size:11.5px;font-weight:600;color:var(--txt2);text-transform:uppercase;letter-spacing:.3px;padding-top:1px;white-space:nowrap}
+.rs-kv-val{font-size:13px;color:var(--txt);line-height:1.55}
+.rs-list{display:flex;flex-direction:column;gap:5px}
+.rs-list-item{display:flex;align-items:flex-start;gap:9px;font-size:13px;color:var(--txt);line-height:1.55}
+.rs-list-bullet{width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:7px}
+.rs-list-bullet.amber {background:var(--amber)}
+.rs-list-bullet.teal  {background:var(--teal)}
+.rs-list-bullet.violet{background:var(--violet)}
+.rs-list-bullet.rose  {background:var(--rose)}
+.rs-list-bullet.sage  {background:var(--sage)}
+.rs-list-bullet.slate {background:var(--slate)}
+.rs-tag-row{display:flex;flex-wrap:wrap;gap:6px}
+.rs-tag{padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:500;border:1px solid}
+.rs-tag.amber {background:var(--amber-bg);color:var(--amber2);border-color:#fde68a}
+.rs-tag.teal  {background:var(--teal-bg);color:var(--teal);border-color:#99f6e4}
+.rs-tag.violet{background:var(--violet-bg);color:var(--violet);border-color:#ddd6fe}
+.rs-tag.rose  {background:var(--rose-bg);color:var(--rose);border-color:#fbcfe8}
+.rs-tag.sage  {background:var(--sage-bg);color:var(--sage);border-color:#d9f99d}
+.rs-tag.slate {background:var(--slate-bg);color:var(--slate);border-color:#cbd5e1}
+.rs-tag.green {background:var(--green-bg);color:var(--green);border-color:#a7f3d0}
+.rs-tag.muted {background:var(--surface2);color:var(--txt2);border-color:var(--border)}
+.rs-step-list{display:flex;flex-direction:column;gap:0}
+.rs-step{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border2)}
+.rs-step:last-child{border-bottom:none;padding-bottom:0}
+.rs-step-num{width:22px;height:22px;border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;color:#fff}
+.rs-step-num.amber {background:var(--amber)}
+.rs-step-num.teal  {background:var(--teal)}
+.rs-step-num.violet{background:var(--violet)}
+.rs-step-num.rose  {background:var(--rose)}
+.rs-step-num.sage  {background:var(--sage)}
+.rs-step-content{flex:1;font-size:13px;line-height:1.6;color:var(--txt)}
+.rs-step-title{font-weight:600;margin-bottom:2px}
+.rs-callout{padding:11px 14px;border-radius:var(--r2);border-left:3px solid;font-size:13px;line-height:1.6}
+.rs-callout.info{background:var(--blue-bg);border-color:var(--blue);color:#1e3a8a}
+.rs-callout.warn{background:#fffbeb;border-color:#f59e0b;color:#78350f}
+.rs-callout.tip {background:var(--green-bg);border-color:var(--green);color:#064e3b}
+.rs-callout.risk{background:var(--red-bg);border-color:var(--red);color:#7f1d1d}
+.rs-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.rs-table th{padding:7px 12px;text-align:left;font-weight:600;color:var(--txt2);background:var(--surface2);border:1px solid var(--border2);font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+.rs-table td{padding:8px 12px;border:1px solid var(--border2);color:var(--txt);line-height:1.5;vertical-align:top}
+.rs-table tr:nth-child(even) td{background:#faf9f7}
+.rs-progress{display:flex;flex-direction:column;gap:8px}
+.rs-progress-item{display:flex;flex-direction:column;gap:3px}
+.rs-progress-label{display:flex;justify-content:space-between;font-size:12px;color:var(--txt2)}
+.rs-progress-bar{height:6px;background:var(--border2);border-radius:3px;overflow:hidden}
+.rs-progress-fill{height:100%;border-radius:3px;background:var(--amber)}
+.rs-progress-fill.teal{background:var(--teal)}
+.rs-progress-fill.violet{background:var(--violet)}
+.rs-checklist{display:flex;flex-direction:column;gap:6px}
+.rs-check-item{display:flex;align-items:flex-start;gap:9px;font-size:13px;color:var(--txt);line-height:1.5}
+.rs-check-box{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border);background:var(--surface);flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center}
+.rs-check-box.done{background:var(--green);border-color:var(--green)}
+
+.input-bar{padding:16px 28px 20px;background:var(--bg);border-top:1px solid var(--border);flex-shrink:0}
+.input-inner{max-width:880px;margin:0 auto}
+.input-wrap{display:flex;align-items:flex-end;gap:9px;background:var(--surface);border:1.5px solid var(--border);border-radius:13px;padding:9px 11px;box-shadow:var(--shadow);transition:border-color .15s,box-shadow .15s}
+.input-wrap:focus-within{border-color:var(--amber);box-shadow:0 0 0 3px rgba(217,119,6,.1),var(--shadow)}
+.task-ta{flex:1;border:none!important;background:transparent!important;padding:3px!important;box-shadow:none!important;font-family:'DM Sans',sans-serif;font-size:14px;line-height:1.6;min-height:22px;max-height:160px;resize:none;overflow-y:auto;outline:none;color:var(--txt)}
+.task-ta::placeholder{color:var(--muted)}
+.send-btn{width:34px;height:34px;background:var(--txt);border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
+.send-btn:hover{background:#2d2a26;transform:scale(1.05)}
+.send-btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.send-btn svg{width:15px;height:15px}
+.input-hint{margin-top:7px;font-size:11px;color:var(--muted);text-align:center}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+@media(max-width:720px){.layout{grid-template-columns:1fr}.sidebar{display:none}.hint-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sb-head">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        </div>
+        <div>
+          <div class="logo-name">ARIA</div>
+          <div class="logo-sub">Personal OS Agent</div>
+        </div>
+      </div>
+      <div class="sb-label">Mode</div>
+      <div class="mode-grid">
+        <button class="mode-btn active-chat" id="btn-chat" onclick="setMode('chat')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          Chat
+        </button>
+        <button class="mode-btn" id="btn-goals" onclick="setMode('goals')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+          Goals
+        </button>
+        <button class="mode-btn" id="btn-habits" onclick="setMode('habits')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Habits
+        </button>
+        <button class="mode-btn" id="btn-reflect" onclick="setMode('reflect')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Reflect
+        </button>
+        <button class="mode-btn" id="btn-plan" onclick="setMode('plan')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          Plan
+        </button>
+        <button class="mode-btn" id="btn-memory" onclick="setMode('memory')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          Memory
+        </button>
+      </div>
+    </div>
+    <div class="sb-sec">
+      <div class="sb-label">Status</div>
+      <div id="statusBadge" class="badge badge-idle"><span class="dot"></span>Ready</div>
+      <div style="margin-top:9px;font-size:11.5px;color:var(--muted)" id="modeNote">Chat — talk to your second brain</div>
+    </div>
+    <div class="sb-sec">
+      <div class="sb-label">Session Stats</div>
+      <div class="stat-row">
+        <div class="stat-box"><div class="stat-n" id="sGoals">0</div><div class="stat-l">Goals</div></div>
+        <div class="stat-box"><div class="stat-n" id="sHabits">0</div><div class="stat-l">Habits</div></div>
+        <div class="stat-box"><div class="stat-n" id="sResponses">0</div><div class="stat-l">Responses</div></div>
+      </div>
+    </div>
+    <div class="sb-sec">
+      <div class="sb-label">Memory</div>
+      <div class="memory-mini" id="memoryMini"><div class="muted-note">No memory stored yet</div></div>
+      <div class="mem-add">
+        <select class="mem-sel" id="memType">
+          <option value="goals">Goal</option>
+          <option value="habits">Habit</option>
+          <option value="decisions">Decision</option>
+          <option value="insights" selected>Insight</option>
+        </select>
+        <input class="mem-input" id="memInput" type="text" placeholder="Add to memory…"/>
+        <button class="mem-add-btn" onclick="addToMemory()">+</button>
+      </div>
+    </div>
+    <div class="sb-sec" style="flex:1">
+      <div class="sb-label">Recent</div>
+      <div class="recent-list" id="recentList"><div class="muted-note">No queries yet</div></div>
+    </div>
+    <div class="sb-sec">
+      <button class="new-btn" onclick="clearChat()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New session
+      </button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="tl">
+        <div class="mode-pill chat" id="modePill">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          <span id="pillTxt">Chat Mode</span>
+        </div>
+      </div>
+      <button class="ghost-btn" onclick="clearChat()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+        Clear
+      </button>
+    </div>
+    <div class="msgs-wrap" id="msgsWrap">
+      <div class="msgs" id="msgs">
+        <div class="welcome" id="welcome">
+          <div class="w-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+          </div>
+          <h2>Your Personal OS</h2>
+          <p>ARIA is your second brain — a strategic thinking partner that tracks your goals, designs your habits, reasons through your decisions, and remembers everything.</p>
+          <div class="hint-grid">
+            <div class="hint h-chat" onclick="hint('chat','What should I focus on right now to make the most progress this week?')">
+              <div class="hint-em">💬</div>
+              <div><strong>Ask ARIA</strong><small>Strategic advice & thinking</small></div>
+            </div>
+            <div class="hint h-goals" onclick="hint('goals','I want to build a SaaS product and reach 100 paying customers in 6 months')">
+              <div class="hint-em">🎯</div>
+              <div><strong>Set a Goal</strong><small>Architecture & milestones</small></div>
+            </div>
+            <div class="hint h-habits" onclick="hint('habits','I want to build a daily writing habit — 500 words every morning before work')">
+              <div class="hint-em">⚡</div>
+              <div><strong>Design a Habit</strong><small>Cue, routine & reward</small></div>
+            </div>
+            <div class="hint h-reflect" onclick="hint('reflect','I have been offered a new job at double my salary but I would have to relocate')">
+              <div class="hint-em">🪞</div>
+              <div><strong>Reflect & Decide</strong><small>Decision reasoning</small></div>
+            </div>
+            <div class="hint h-plan" onclick="hint('plan','Plan my next 90 days to launch an online course on productivity systems')">
+              <div class="hint-em">📋</div>
+              <div><strong>Build a Plan</strong><small>Phases, tasks & risks</small></div>
+            </div>
+            <div class="hint h-memory" onclick="hint('memory','What patterns do you see across my goals and decisions so far?')">
+              <div class="hint-em">🧠</div>
+              <div><strong>Query Memory</strong><small>Patterns & stored insights</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="input-bar">
+      <div class="input-inner">
+        <div class="input-wrap">
+          <textarea id="ta" class="task-ta" rows="1" placeholder="Talk to ARIA — goals, habits, decisions, plans…"></textarea>
+          <button class="send-btn" id="sendBtn" onclick="handleSend()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+          </button>
+        </div>
+        <div class="input-hint">Enter to send · Shift+Enter for new line · Memory is preserved across your session</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const BACKEND = "https://personal-os.vishwajeetadkine705.workers.dev";
+let mode="chat",running=false,history=[],memory={goals:[],habits:[],decisions:[],insights:[]},statsResponses=0;
+const ta=document.getElementById("ta"),sendBtn=document.getElementById("sendBtn"),msgs=document.getElementById("msgs"),welcome=document.getElementById("welcome"),msgsWrap=document.getElementById("msgsWrap");
+
+ta.addEventListener("input",function(){this.style.height="auto";this.style.height=Math.min(this.scrollHeight,160)+"px";});
+ta.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();handleSend();}});
+document.getElementById("memInput").addEventListener("keydown",function(e){if(e.key==="Enter")addToMemory();});
+
+const MODES = {
+  chat:    {label:"Chat Mode",   note:"Chat — talk to your second brain",             ph:"Ask ARIA anything — strategy, advice, thinking…",         svgPath:`<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>`},
+  goals:   {label:"Goals Mode",  note:"Goals — architecture, milestones & strategy",  ph:"Describe a goal you want to achieve…",                    svgPath:`<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>`},
+  habits:  {label:"Habits Mode", note:"Habits — design, tracking & behaviour science",ph:"Describe a habit you want to build or break…",            svgPath:`<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>`},
+  reflect: {label:"Reflect Mode",note:"Reflect — decision reasoning & deep thinking", ph:"Share what you're wrestling with or deciding…",           svgPath:`<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`},
+  plan:    {label:"Plan Mode",   note:"Plan — strategic execution & task breakdown",  ph:"Describe what you need a plan for…",                      svgPath:`<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>`},
+  memory:  {label:"Memory Mode", note:"Memory — your second brain storage & recall",  ph:"Ask about your stored goals, patterns, or add an entry…", svgPath:`<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>`},
+};
+
+// Mode color mapping for section icons
+const MODE_SECTION_COLORS = {
+  chat: ["amber","blue","green","muted","violet","amber"],
+  goals: ["teal","amber","violet","green","sage","muted"],
+  habits: ["violet","amber","teal","green","rose","muted"],
+  reflect: ["rose","amber","teal","violet","slate","green"],
+  plan: ["sage","amber","teal","violet","rose","slate"],
+  memory: ["slate","teal","amber","violet","green","muted"],
+};
+
+// Section icon definitions per mode
+const SECTION_META = {
+  // Goals
+  "goal":        {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>`,color:"teal"},
+  "milestone":   {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`,color:"amber"},
+  "strategy":    {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,color:"violet"},
+  "habit":       {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,color:"violet"},
+  "cue":         {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,color:"amber"},
+  "routine":     {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>`,color:"violet"},
+  "reward":      {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>`,color:"rose"},
+  "decision":    {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>`,color:"rose"},
+  "plan":        {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,color:"sage"},
+  "phase":       {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,color:"sage"},
+  "risk":        {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,color:"red"},
+  "action":      {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`,color:"green"},
+  "insight":     {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`,color:"amber"},
+  "memory":      {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>`,color:"slate"},
+  "pro":         {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>`,color:"green"},
+  "con":         {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,color:"red"},
+  "summary":     {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`,color:"muted"},
+  "default":     {icon:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>`,color:"muted"},
+};
+
+function getSectionMeta(title) {
+  const t = title.toLowerCase();
+  for (const [key, meta] of Object.entries(SECTION_META)) {
+    if (key !== "default" && t.includes(key)) return meta;
+  }
+  return SECTION_META.default;
+}
+
+function setMode(m){
+  mode=m;
+  Object.keys(MODES).forEach(k=>{document.getElementById("btn-"+k).className="mode-btn"+(k===m?" active-"+k:"");});
+  const cfg=MODES[m];const pill=document.getElementById("modePill");
+  pill.className="mode-pill "+m;
+  pill.innerHTML=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">${cfg.svgPath}</svg><span id="pillTxt">${cfg.label}</span>`;
+  document.getElementById("modeNote").textContent=cfg.note;
+  ta.placeholder=cfg.ph;
+}
+function hint(m,text){setMode(m);ta.value=text;ta.style.height="auto";ta.style.height=Math.min(ta.scrollHeight,160)+"px";ta.focus();}
+function setStatus(type,label){const cls={idle:"badge-idle",run:"badge-run",done:"badge-done",err:"badge-err"};const el=document.getElementById("statusBadge");el.className="badge "+(cls[type]||"badge-idle");el.innerHTML=`<span class="dot"></span>${label}`;}
+function updateStats(){document.getElementById("sGoals").textContent=memory.goals.length;document.getElementById("sHabits").textContent=memory.habits.length;document.getElementById("sResponses").textContent=statsResponses;}
+function addToMemory(){const input=document.getElementById("memInput");const type=document.getElementById("memType").value;const text=input.value.trim();if(!text)return;if(!memory[type])memory[type]=[];memory[type].push(text);input.value="";refreshMemoryPanel();updateStats();}
+function refreshMemoryPanel(){const panel=document.getElementById("memoryMini");const items=[];["goals","habits","decisions","insights"].forEach(type=>{(memory[type]||[]).slice(-2).forEach(item=>items.push({type,text:item}));});if(!items.length){panel.innerHTML=`<div class="muted-note">No memory stored yet</div>`;return;}panel.innerHTML=items.slice(-6).map(i=>`<div class="mem-tag ${i.type}-tag">${i.type[0].toUpperCase()}: ${esc(i.text.slice(0,46))}${i.text.length>46?"…":""}</div>`).join("");}
+function addRecent(text,m){const list=document.getElementById("recentList");const empty=list.querySelector(".muted-note");if(empty)empty.remove();const item=document.createElement("div");item.className="recent-item";item.innerHTML=`<div class="ri-dot"></div>${esc(text.slice(0,55))}${text.length>55?"…":""}`;item.onclick=()=>hint(m,text);list.prepend(item);while(list.children.length>5)list.lastChild.remove();}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function now(){return new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});}
+function scrollBottom(){msgsWrap.scrollTop=msgsWrap.scrollHeight;}
+function hideWelcome(){if(welcome)welcome.style.display="none";}
+function addMsg(role,htmlContent,msgMode){
+  hideWelcome();
+  const row=document.createElement("div");row.className="msg-row";
+  const isAgent=role==="agent";
+  const modeTag=msgMode?`<span class="msg-mode-tag tag-${msgMode}">${MODES[msgMode]?.label.replace(" Mode","")}</span>`:"";
+  row.innerHTML=`<div class="av ${isAgent?"av-agent":"av-user"}">${isAgent?`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>`:"Y"}</div><div class="msg-body"><div class="msg-who">${isAgent?"ARIA":"You"} ${modeTag} <span class="msg-time">${now()}</span></div><div class="msg-content">${htmlContent}</div></div>`;
+  msgs.appendChild(row);scrollBottom();return row;
+}
+function addThinking(){
+  hideWelcome();
+  const row=document.createElement("div");row.className="thinking-row";row.id="thinking";
+  row.innerHTML=`<div class="av av-agent"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div><div class="msg-body"><div class="msg-who">ARIA</div><div class="dots"><span></span><span></span><span></span></div></div>`;
+  msgs.appendChild(row);scrollBottom();
+}
+function removeThinking(){const t=document.getElementById("thinking");if(t)t.remove();}
+function card(type,text){
+  const cls={ok:"card-ok",work:"card-work",info:"card-info",err:"card-err"};
+  const icons={ok:`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>`,work:`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,info:`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,err:`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`};
+  return `<div class="card ${cls[type]||"card-ok"}">${icons[type]||""} ${text}</div>`;
+}
+
+/* ═══════════════════════════════════════
+   STRUCTURED RESPONSE RENDERER
+═══════════════════════════════════════ */
+
+function isHeading(line) {
+  return /^#{1,3}\s+.+/.test(line) ||
+         /^[A-Z][A-Z\s&,\/\-]{4,50}:?\s*$/.test(line.trim()) ||
+         (/^\d+\.\s+[A-Z]/.test(line) && line.length < 60 && !line.includes(","));
+}
+
+function parseIntoSections(content) {
+  const lines = content.split("\n");
+  const sections = [];
+  let currentTitle = null;
+  let buffer = [];
+
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    if (isHeading(trimmed) && trimmed.length > 3 && trimmed.length < 80) {
+      if (currentTitle !== null || buffer.join("\n").trim()) {
+        sections.push({title: currentTitle||"", body: buffer.join("\n").trim()});
+        buffer = [];
+      }
+      currentTitle = trimmed.replace(/^#{1,3}\s+/,"").replace(/:$/,"").trim();
+    } else {
+      buffer.push(line);
+    }
+  });
+  if (buffer.join("\n").trim()) {
+    sections.push({title: currentTitle||"", body: buffer.join("\n").trim()});
+  }
+  return sections;
+}
+
+function renderSectionBody(text, accentColor) {
+  const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+  const frag = document.createDocumentFragment();
+
+  // Table detection
+  const tableLines = lines.filter(l => l.startsWith("|") && l.endsWith("|"));
+  if (tableLines.length >= 2) {
+    const table = document.createElement("table");
+    table.className = "rs-table";
+    let headerDone = false;
+    lines.forEach(line => {
+      if (!line.startsWith("|")) return;
+      if (/^\|[-\s|:]+\|$/.test(line)) { headerDone = true; return; }
+      const cells = line.split("|").filter((_,i,a) => i>0 && i<a.length-1).map(c => c.trim());
+      const tr = document.createElement("tr");
+      cells.forEach(cell => {
+        const el = document.createElement(!headerDone ? "th" : "td");
+        el.textContent = cell;
+        tr.appendChild(el);
+      });
+      if (!headerDone) { const thead = table.querySelector("thead")||document.createElement("thead"); thead.appendChild(tr); if(!table.querySelector("thead"))table.appendChild(thead); }
+      else { let tbody = table.querySelector("tbody"); if(!tbody){tbody=document.createElement("tbody");table.appendChild(tbody);} tbody.appendChild(tr); }
+    });
+    frag.appendChild(table);
+    return frag;
+  }
+
+  // Numbered steps
+  const numberedLines = lines.filter(l => /^\d+\.\s/.test(l));
+  if (numberedLines.length >= 2 && numberedLines.length >= lines.length * 0.55) {
+    const stepColors = ["amber","teal","violet","rose","sage","slate"];
+    const stepList = document.createElement("div");
+    stepList.className = "rs-step-list";
+    numberedLines.forEach((line, i) => {
+      const content = line.replace(/^\d+\.\s+/,"");
+      const colonIdx = content.indexOf(":");
+      let title = "", body = content;
+      if (colonIdx > -1 && colonIdx < 45) { title = content.slice(0,colonIdx); body = content.slice(colonIdx+1).trim(); }
+      const step = document.createElement("div");
+      step.className = "rs-step";
+      step.innerHTML = `<div class="rs-step-num ${stepColors[i%stepColors.length]}">${i+1}</div><div class="rs-step-content">${title?`<div class="rs-step-title">${esc(title)}</div>`:""}${esc(body)}</div>`;
+      stepList.appendChild(step);
+    });
+    frag.appendChild(stepList);
+    // Render any non-numbered lines as paras
+    lines.filter(l => !/^\d+\.\s/.test(l)).forEach(line => {
+      const p = document.createElement("div"); p.className="rs-para"; p.textContent=line; frag.appendChild(p);
+    });
+    return frag;
+  }
+
+  // Bullet lists
+  const bulletLines = lines.filter(l => /^[-*•]\s/.test(l));
+  if (bulletLines.length >= 2 && bulletLines.length >= lines.length * 0.5) {
+    // KV style?
+    const kvLines = bulletLines.filter(l => /^[-*•]\s+[\w\s]{2,30}:\s+\S/.test(l));
+    if (kvLines.length >= bulletLines.length * 0.6) {
+      const grid = document.createElement("div");
+      grid.className = "rs-kv-grid";
+      kvLines.forEach(line => {
+        const content = line.replace(/^[-*•]\s+/,"");
+        const colonIdx = content.indexOf(":");
+        const key = content.slice(0,colonIdx).trim();
+        const val = content.slice(colonIdx+1).trim();
+        const k = document.createElement("div"); k.className="rs-kv-key"; k.textContent=key;
+        const v = document.createElement("div"); v.className="rs-kv-val"; v.textContent=val;
+        grid.appendChild(k); grid.appendChild(v);
+      });
+      frag.appendChild(grid);
+    } else {
+      const avgLen = bulletLines.reduce((a,l)=>a+l.length,0)/bulletLines.length;
+      if (avgLen < 45 && bulletLines.length >= 3) {
+        // Tags
+        const colors = ["amber","teal","violet","rose","sage","slate","green"];
+        const tagRow = document.createElement("div"); tagRow.className="rs-tag-row";
+        bulletLines.forEach((line,i) => {
+          const text = line.replace(/^[-*•]\s+/,"");
+          const tag = document.createElement("span"); tag.className=`rs-tag ${colors[i%colors.length]}`; tag.textContent=text;
+          tagRow.appendChild(tag);
+        });
+        frag.appendChild(tagRow);
+      } else {
+        const bColors = ["amber","teal","violet","rose","sage","slate"];
+        const list = document.createElement("div"); list.className="rs-list";
+        bulletLines.forEach((line,i) => {
+          const text = line.replace(/^[-*•]\s+/,"");
+          const item = document.createElement("div"); item.className="rs-list-item";
+          item.innerHTML = `<span class="rs-list-bullet ${bColors[i%bColors.length]}"></span><span>${esc(text)}</span>`;
+          list.appendChild(item);
+        });
+        frag.appendChild(list);
+      }
+    }
+    lines.filter(l => !/^[-*•]\s/.test(l)).forEach(line => {
+      const p = document.createElement("div"); p.className="rs-para"; p.textContent=line; frag.appendChild(p);
+    });
+    return frag;
+  }
+
+  // KV pairs
+  const kvPairs = lines.filter(l => /^[\w\s\/]{3,30}:\s+\S/.test(l) && l.length < 120);
+  if (kvPairs.length >= 2 && kvPairs.length === lines.length) {
+    const grid = document.createElement("div"); grid.className="rs-kv-grid";
+    kvPairs.forEach(line => {
+      const colonIdx = line.indexOf(":");
+      const key = line.slice(0,colonIdx).trim(); const val = line.slice(colonIdx+1).trim();
+      const k = document.createElement("div"); k.className="rs-kv-key"; k.textContent=key;
+      const v = document.createElement("div"); v.className="rs-kv-val"; v.textContent=val;
+      grid.appendChild(k); grid.appendChild(v);
+    });
+    frag.appendChild(grid);
+    return frag;
+  }
+
+  // Callout detection
+  const lower = text.toLowerCase();
+  if (lower.includes("⚠️")||lower.includes("warning:")||lower.includes("caution:")) {
+    const c=document.createElement("div");c.className="rs-callout warn";c.textContent=text;frag.appendChild(c);return frag;
+  }
+  if (lower.includes("💡")||lower.includes("tip:")||lower.includes("note:")) {
+    const c=document.createElement("div");c.className="rs-callout tip";c.textContent=text;frag.appendChild(c);return frag;
+  }
+  if (lower.includes("🔴")||lower.includes("risk:")||lower.includes("critical:")) {
+    const c=document.createElement("div");c.className="rs-callout risk";c.textContent=text;frag.appendChild(c);return frag;
+  }
+
+  // Default paragraphs
+  text.split(/\n{2,}/).forEach(para => {
+    if (!para.trim()) return;
+    const p = document.createElement("div"); p.className="rs-para"; p.textContent=para.trim(); frag.appendChild(p);
+  });
+  return frag;
+}
+
+function sectionToggle(header, body, chevron) {
+  const isOpen = !body.classList.contains("collapsed");
+  body.classList.toggle("collapsed", isOpen);
+  chevron.classList.toggle("open", !isOpen);
+}
+
+function renderStructuredResponse(content, respStatus, respMode) {
+  const wrap = document.createElement("div");
+
+  // Toolbar
+  const toolbar = document.createElement("div");
+  toolbar.className = "resp-toolbar";
+  const LABELS = {GOALS:"Goal Architecture",HABITS:"Habit Design",REFLECT:"Reflection & Decision",PLAN:"Strategic Plan",MEMORY:"Memory",CHAT:"ARIA Response",COMPLETED:"ARIA Response"};
+  const label = LABELS[respStatus] || "ARIA Response";
+  const hClass = respMode || "chat";
+  const pid = "r"+Date.now();
+  toolbar.innerHTML = `
+    <div class="resp-toolbar-left ${hClass}">${label}</div>
+    <button class="copy-btn" id="cpbtn-${pid}">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy
+    </button>`;
+  wrap.appendChild(toolbar);
+
+  const respBody = document.createElement("div");
+  respBody.className = "resp-body";
+  respBody.id = pid;
+  wrap.appendChild(respBody);
+
+  // Parse sections
+  const sections = parseIntoSections(content);
+  sections.forEach(sec => {
+    if (!sec.body && !sec.title) return;
+    const sectionEl = document.createElement("div");
+    sectionEl.className = "rs-section";
+
+    if (sec.title) {
+      const meta = getSectionMeta(sec.title);
+      const header = document.createElement("div");
+      header.className = "rs-section-header";
+      header.innerHTML = `
+        <div class="rs-section-icon ${meta.color}">${meta.icon}</div>
+        <div class="rs-section-title">${esc(sec.title)}</div>
+        <svg class="rs-section-chevron open" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+      const secBody = document.createElement("div");
+      secBody.className = "rs-section-body";
+      if (sec.body) secBody.appendChild(renderSectionBody(sec.body, meta.color));
+      const chevron = header.querySelector(".rs-section-chevron");
+      header.addEventListener("click", () => sectionToggle(header, secBody, chevron));
+      sectionEl.appendChild(header);
+      sectionEl.appendChild(secBody);
+    } else {
+      const secBody = document.createElement("div");
+      secBody.className = "rs-section-body";
+      secBody.appendChild(renderSectionBody(sec.body, "muted"));
+      sectionEl.appendChild(secBody);
+    }
+    respBody.appendChild(sectionEl);
+  });
+
+  // Download
+  const dlRow = document.createElement("div");
+  dlRow.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;margin-top:8px";
+  const dlTxt = document.createElement("button");
+  dlTxt.style.cssText = "display:inline-flex;align-items:center;gap:7px;padding:8px 15px;border:none;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12.5px;font-weight:500;cursor:pointer;background:#1a1814;color:#fff";
+  dlTxt.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download .txt`;
+  dlTxt.onclick = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([content],{type:"text/plain"}));
+    a.download = `aria-${label.toLowerCase().replace(/\s+/g,"-")}-${Date.now()}.txt`;
+    a.click();
+  };
+  dlRow.appendChild(dlTxt);
+  wrap.appendChild(dlRow);
+
+  // Copy btn
+  setTimeout(() => {
+    const btn = document.getElementById("cpbtn-"+pid);
+    if(btn) btn.onclick = () => {
+      navigator.clipboard.writeText(content).then(() => {
+        btn.textContent = "✓ Copied";
+        setTimeout(() => btn.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy`, 2000);
+      }).catch(()=>{});
+    };
+  }, 50);
+
+  return wrap;
+}
+
+function autoExtractMemory(content, respStatus) {
+  if (respStatus==="GOALS") {const m=content.match(/Primary Goal:\s*(.+)/);if(m){const g=m[1].trim();if(g&&!memory.goals.includes(g)){memory.goals.push(g);refreshMemoryPanel();updateStats();}}}
+  if (respStatus==="HABITS") {const m=content.match(/Habit Name:\s*(.+)/);if(m){const h=m[1].trim();if(h&&!memory.habits.includes(h)){memory.habits.push(h);refreshMemoryPanel();updateStats();}}}
+}
+
+async function handleSend() {
+  const query=ta.value.trim();if(!query||running)return;
+  addMsg("user",esc(query));addRecent(query,mode);history.push({role:"user",content:query});
+  ta.value="";ta.style.height="auto";running=true;sendBtn.disabled=true;
+  const statusLabels={chat:"Thinking…",goals:"Architecting goal…",habits:"Designing habit…",reflect:"Reflecting…",plan:"Building plan…",memory:"Querying memory…"};
+  setStatus("run",statusLabels[mode]||"Processing…");addThinking();
+  let data;
+  const structuredGuideByMode = {
+    chat: [
+      "Respond like ChatGPT with clear, concise markdown sections.",
+      "Use this structure:",
+      "1) Quick Answer",
+      "2) Why This Matters",
+      "3) Recommended Next Steps",
+      "4) Watchouts"
+    ].join("\n"),
+    goals: [
+      "Return a practical goal architecture.",
+      "Use this structure:",
+      "1) Goal Statement",
+      "2) Success Metrics",
+      "3) Milestones",
+      "4) Immediate Actions"
+    ].join("\n"),
+    habits: [
+      "Return a habit system that is easy to execute.",
+      "Use this structure:",
+      "1) Habit Design",
+      "2) Trigger + Routine + Reward",
+      "3) Daily/Weekly Tracking",
+      "4) Failure Recovery Plan"
+    ].join("\n"),
+    reflect: [
+      "Return a decision reflection brief.",
+      "Use this structure:",
+      "1) Situation Snapshot",
+      "2) Key Insights",
+      "3) Decision Options",
+      "4) Recommended Decision"
+    ].join("\n"),
+    plan: [
+      "Return a strategic execution plan.",
+      "Use this structure:",
+      "1) Objective",
+      "2) Plan Breakdown",
+      "3) Priority Sequence",
+      "4) Next 7 Days"
+    ].join("\n"),
+    memory: [
+      "Return memory retrieval in structured bullets.",
+      "Use this structure:",
+      "1) Relevant Memory",
+      "2) Patterns",
+      "3) Suggested Update"
+    ].join("\n")
+  };
+  const structuredQuery = `${query}\n\n${structuredGuideByMode[mode] || structuredGuideByMode.chat}`;
+  try {
+    const res=await fetch(BACKEND,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:structuredQuery,mode,history:history.slice(-14),memory,context:{currentGoals:memory.goals.slice(-3),recentHabits:memory.habits.slice(-3),pendingDecisions:memory.decisions.slice(-3)}})});
+    data=await res.json();
+  } catch(err) {
+    removeThinking();addMsg("agent",card("err","Network error: "+esc(err.message)),mode);setStatus("err","Error");running=false;sendBtn.disabled=false;return;
+  }
+  removeThinking();
+  const STRUCTURED=["GOALS","HABITS","REFLECT","PLAN","MEMORY","CHAT","COMPLETED"];
+  if(STRUCTURED.includes(data.status)){
+    const content=data.content||data.solution||"";
+    hideWelcome();
+    const row=document.createElement("div");row.className="msg-row";
+    const modeTag=`<span class="msg-mode-tag tag-${mode}">${MODES[mode]?.label.replace(" Mode","")}</span>`;
+    row.innerHTML=`<div class="av av-agent"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div><div class="msg-body"><div class="msg-who">ARIA ${modeTag} <span class="msg-time">${now()}</span></div><div class="msg-content" id="ariaSlot"></div></div>`;
+    msgs.appendChild(row);scrollBottom();
+    const slot=document.getElementById("ariaSlot");slot.innerHTML=card("work","Composing response…");
+    const el=renderStructuredResponse(content,data.status,mode);
+    const secCount=parseIntoSections(content).filter(s=>s.title||s.body).length;
+    slot.innerHTML=card("ok",`Report ready — ${secCount} sections`);
+    slot.appendChild(el);scrollBottom();
+    autoExtractMemory(content,data.status);
+    statsResponses++;history.push({role:"assistant",content:content.slice(0,300)+"…"});
+    const doneLabels={GOALS:"Goal ready",HABITS:"Habit designed",REFLECT:"Reflection complete",PLAN:"Plan ready",MEMORY:"Memory retrieved",CHAT:"Done",COMPLETED:"Done"};
+    setStatus("done",doneLabels[data.status]||"Done");updateStats();
+  } else if(data.status==="ERROR"){
+    addMsg("agent",card("err",esc(data.message||"Unknown error")),mode);setStatus("err","Error");
+  } else {
+    addMsg("agent",card("err","Unexpected response from agent."),mode);setStatus("err","Error");
+  }
+  running=false;sendBtn.disabled=false;
+}
+
+function clearChat(){
+  msgs.innerHTML="";msgs.appendChild(welcome);welcome.style.display="";history=[];statsResponses=0;updateStats();
+  document.getElementById("recentList").innerHTML=`<div class="muted-note">No queries yet</div>`;
+  setStatus("idle","Ready");running=false;sendBtn.disabled=false;
+}
+</script>
+</body>
+</html>
