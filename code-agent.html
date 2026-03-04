@@ -1487,6 +1487,36 @@ function extractScore(rawText, labels) {
   }
   return 0;
 }
+function verdictToScore(verdict, domain) {
+  const v = String(verdict || "").toLowerCase();
+  if (!v) return 0;
+  if (domain === "security") {
+    if (/critical/.test(v)) return 10;
+    if (/high risk|poor|unsafe/.test(v)) return 25;
+    if (/needs work|needs hardening|moderate/.test(v)) return 55;
+    if (/good|strong|healthy/.test(v)) return 82;
+    if (/excellent|low risk/.test(v)) return 94;
+  }
+  if (domain === "scalability") {
+    if (/critical|severe/.test(v)) return 15;
+    if (/needs work|bottleneck|poor/.test(v)) return 45;
+    if (/moderate|fair/.test(v)) return 65;
+    if (/good|strong/.test(v)) return 82;
+    if (/excellent/.test(v)) return 94;
+  }
+  return 0;
+}
+function extractVerdict(rawText, domainLabel) {
+  const re = new RegExp(`Overall\s+${domainLabel}\s+Verdict\s*[:\-]\s*([^\n]+)`, "i");
+  const m = rawText.match(re);
+  return m ? m[1].trim() : "";
+}
+function extractExecutiveSummary(rawText) {
+  const sec = rawText.match(/Executive Summary[\s\S]*?Security\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || "";
+  const sca = rawText.match(/Executive Summary[\s\S]*?Scalability\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || "";
+  if (sec && sca) return `Security: ${sec} Scalability: ${sca}`;
+  return sec || sca || "";
+}
 function parseDetailedFindings(rawText, parsed) {
   const findings = [];
   const parsedFlags = parsed?.sections?.flatMap(s => Array.isArray(s?.flags) ? s.flags : []) || [];
@@ -1528,6 +1558,12 @@ function parseDetailedFindings(rawText, parsed) {
     }
     findings.push({ sev, title, cwe, owasp, location, remediation, effort });
   }
+  if (!findings.length) {
+    const secLine = rawText.match(/Executive Summary[\s\S]*?Security\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim();
+    const scaLine = rawText.match(/Executive Summary[\s\S]*?Scalability\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim();
+    if (secLine) findings.push({ sev: /critical|remote code execution|missing auth|mitm|pii/i.test(secLine) ? "CRITICAL" : "HIGH", title: secLine.slice(0, 120), cwe: "", owasp: "", location: "Executive Summary", remediation: "Address high-risk security controls immediately.", effort: "high" });
+    if (scaLine) findings.push({ sev: /exhaust|blocking|unbounded|bottleneck/i.test(scaLine) ? "HIGH" : "MEDIUM", title: scaLine.slice(0, 120), cwe: "", owasp: "", location: "Executive Summary", remediation: "Prioritize non-blocking I/O and resource caps.", effort: "medium" });
+  }
   return findings;
 }
 function renderParsedSecurityText(rawText) {
@@ -1535,9 +1571,15 @@ function renderParsedSecurityText(rawText) {
   const lines = cleanedRaw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const parsed = parseJsonCandidates(cleanedRaw);
 
-  const secScore = Number(parsed?.security_score || parsed?.securityScore || parsed?.scores?.security || 0) || extractScore(cleanedRaw, ["security", "security posture", "sec"]);
-  const scaScore = Number(parsed?.scalability_score || parsed?.scalabilityScore || parsed?.scores?.scalability || 0) || extractScore(cleanedRaw, ["scalability", "performance", "resilience"]);
-  const healthFromPayload = Number(parsed?.health_score || parsed?.healthScore || 0);
+  const securityVerdict = extractVerdict(cleanedRaw, "Security");
+  const scalabilityVerdict = extractVerdict(cleanedRaw, "Scalability");
+  const secScore = Number(parsed?.security_score || parsed?.securityScore || parsed?.scores?.security || 0)
+    || extractScore(cleanedRaw, ["security", "security posture", "sec"])
+    || verdictToScore(securityVerdict, "security");
+  const scaScore = Number(parsed?.scalability_score || parsed?.scalabilityScore || parsed?.scores?.scalability || 0)
+    || extractScore(cleanedRaw, ["scalability", "performance", "resilience"])
+    || verdictToScore(scalabilityVerdict, "scalability");
+  const healthFromPayload = Number(parsed?.health_score || parsed?.healthScore || 0) || extractScore(cleanedRaw, ["overall", "health"]);
 
   const findings = parseDetailedFindings(cleanedRaw, parsed);
   const severityRank = { CRITICAL: 1, HIGH: 2, MEDIUM: 3, LOW: 4 };
@@ -1564,12 +1606,15 @@ function renderParsedSecurityText(rawText) {
     thematicNames.forEach(name => {
       const rx = new RegExp(`${name}\\s*[:\\-]\\s*([^\\n]+)`, "i");
       const m = cleanedRaw.match(rx);
-      if (m) thematic.push({ title: name, detail: m[1].trim(), signal: /good|strong|safe|ok|healthy/i.test(m[1]) ? "positive" : /weak|missing|risk|issue|fail/i.test(m[1]) ? "negative" : "neutral" });
+      if (m) thematic.push({ title: name, detail: m[1].trim(), signal: /good|strong|safe|ok|healthy/i.test(m[1]) ? "positive" : /weak|missing|risk|issue|fail|critical/i.test(m[1]) ? "negative" : "neutral" });
     });
   }
+  if (securityVerdict) thematic.unshift({ title: "Security Verdict", detail: securityVerdict, signal: /critical|high risk/i.test(securityVerdict) ? "negative" : /strong|good|excellent|low risk/i.test(securityVerdict) ? "positive" : "neutral" });
+  if (scalabilityVerdict) thematic.unshift({ title: "Scalability Verdict", detail: scalabilityVerdict, signal: /critical|needs work|poor|bottleneck/i.test(scalabilityVerdict) ? "negative" : /strong|good|excellent/i.test(scalabilityVerdict) ? "positive" : "neutral" });
 
   const overall = healthFromPayload || (secScore && scaScore ? Math.round((secScore + scaScore) / 2) : (secScore || scaScore || 65));
-  const summary = parsed?.summary || lines.find(l => l.length > 40 && !/score/i.test(l)) || "Structured fallback generated from raw security analysis output.";
+  const executiveSummary = extractExecutiveSummary(cleanedRaw);
+  const summary = parsed?.summary || executiveSummary || lines.find(l => /language\s*\/\s*framework/i.test(l)) || lines.find(l => l.length > 40 && !/score/i.test(l)) || "Structured fallback generated from raw security analysis output.";
   const reportData = {
     title: parsed?.title || "Security & Scalability Analysis",
     health_score: overall,
@@ -1581,8 +1626,8 @@ function renderParsedSecurityText(rawText) {
         icon: "bar-chart",
         content: "Primary risk posture extracted from the model output.",
         items: [
-          { label: "Security Score", value: secScore ? `${secScore}/100` : "Derived" },
-          { label: "Scalability Score", value: scaScore ? `${scaScore}/100` : "Derived" },
+          { label: "Security Score", value: secScore ? `${secScore}/100` : (securityVerdict || "Derived") },
+          { label: "Scalability Score", value: scaScore ? `${scaScore}/100` : (scalabilityVerdict || "Derived") },
           { label: "Overall", value: `${overall}/100` }
         ]
       },
