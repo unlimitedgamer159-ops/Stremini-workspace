@@ -1676,10 +1676,10 @@ function renderParsedSecurityText(rawText) {
   // ── Build scorecard items from raw text ──────────────────────────────────
   const buildScorecardItems = (raw, categories) => {
     return categories.map(cat => {
-      const rx = new RegExp(`${cat.key}\\s*\\|\\s*(\\d+(?:\\.\\d+)?)\\s*\\|\\s*([^|\\n]+)`, "i");
+      const rx = new RegExp(`(?:${cat.key})\\s*\\|\\s*(\\d+(?:\\.\\d+)?)\\s*\\|\\s*([^|\\n]+)`, "i");
       const m = raw.match(rx);
       const score = m ? parseFloat(m[1]) : null;
-      const verdict = m ? m[2].trim() : null;
+      const verdict = typeof m?.[2] === "string" ? m[2].trim() : null;
       return { label: cat.label, value: score !== null ? `${score}/10 — ${verdict || ""}` : "See raw report" };
     });
   };
