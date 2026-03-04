@@ -123,8 +123,12 @@ html,body{height:100%;background:var(--bg);font-family:'DM Sans',sans-serif;colo
 .picker-panel.visible{display:block}
 .picker-toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
 .picker-meta{font-size:11px;color:var(--txt2)}
+.picker-toolbar-right{display:flex;align-items:center;gap:6px}
 .picker-actions{display:flex;gap:6px}
 .picker-link{font-size:11px;border:1px solid var(--border);background:var(--surface2);padding:4px 8px;border-radius:4px;cursor:pointer}
+.picker-toggle{font-size:11px;border:1px solid var(--rose-border);background:var(--rose-bg);color:var(--rose);padding:4px 8px;border-radius:4px;cursor:pointer;font-weight:600}
+.picker-panel.minimized .picker-actions,.picker-panel.minimized .budget,.picker-panel.minimized #budgetMeta,.picker-panel.minimized .picker-list{display:none}
+.picker-panel.minimized .picker-toolbar{margin-bottom:0}
 .budget{height:7px;background:#f3f4f6;border-radius:99px;overflow:hidden;margin-bottom:8px;border:1px solid var(--border)}
 .budget-bar{height:100%;width:0;background:var(--green);transition:width .2s ease,background .2s ease}
 .picker-list{max-height:220px;overflow:auto;border:1px solid var(--border2);border-radius:6px;background:#fff}
@@ -469,13 +473,16 @@ html,body{height:100%;background:var(--bg);font-family:'DM Sans',sans-serif;colo
           <div class="picker-panel" id="pickerPanel">
             <div class="picker-toolbar">
               <div class="picker-meta" id="pickerMeta">No files loaded.</div>
-              <div class="picker-actions">
-                <button type="button" class="picker-link" id="selectAllBtn">Select all</button>
-                <button type="button" class="picker-link" id="analyseBtn">Analyse selected files</button>
+              <div class="picker-toolbar-right">
+                <div class="picker-actions">
+                  <button type="button" class="picker-link" id="selectAllBtn">Select all</button>
+                  <button type="button" class="picker-link" id="analyseBtn">Analyse selected files</button>
+                </div>
+                <button type="button" class="picker-toggle" id="pickerToggleBtn">Minimize</button>
               </div>
             </div>
             <div class="budget"><div class="budget-bar" id="budgetBar"></div></div>
-            <div class="picker-meta" id="budgetMeta">0 / 28,000 chars</div>
+            <div class="picker-meta" id="budgetMeta">0 / 120,000 chars</div>
             <div class="picker-list" id="pickerList"></div>
           </div>
         </div>
@@ -499,7 +506,7 @@ html,body{height:100%;background:var(--bg);font-family:'DM Sans',sans-serif;colo
 // CONFIG
 // ─────────────────────────────────────────
 const BACKEND = "https://scalability-code-agent.vishwajeetadkine705.workers.dev";
-const GH_CONTEXT_LIMIT = 28000;
+const GH_CONTEXT_LIMIT = 120000;
 const SOURCE_FILE_RE = /\.(js|jsx|ts|tsx|mjs|cjs|py|go|rs|java|kt|swift|rb|php|cs|cpp|cc|c|h|hpp|scala|sh|sql|yaml|yml|json|toml|ini|md)$/i;
 
 // ─────────────────────────────────────────
@@ -530,6 +537,7 @@ const budgetBar   = document.getElementById("budgetBar");
 const budgetMeta  = document.getElementById("budgetMeta");
 const selectAllBtn= document.getElementById("selectAllBtn");
 const analyseBtn  = document.getElementById("analyseBtn");
+const pickerToggleBtn = document.getElementById("pickerToggleBtn");
 
 // ─────────────────────────────────────────
 // Textarea
@@ -554,6 +562,11 @@ function shouldExcludePath(path) {
 function shouldIncludePath(path) {
   if (shouldExcludePath(path)) return false;
   return SOURCE_FILE_RE.test(path);
+}
+
+function setPickerMinimized(minimized) {
+  pickerPanel.classList.toggle("minimized", minimized);
+  pickerToggleBtn.textContent = minimized ? "Expand" : "Minimize";
 }
 function updateBudgetUI() {
   const pct = Math.min(100, (ghPickerState.usedChars / GH_CONTEXT_LIMIT) * 100);
@@ -656,6 +669,7 @@ async function fetchRepoFiles() {
     pickerPanel.classList.add("visible");
     renderPickerList();
     updateBudgetUI();
+    setPickerMinimized(true);
   } catch (e) {
     pickerMeta.textContent = "Unable to fetch repository files.";
   } finally {
@@ -664,6 +678,9 @@ async function fetchRepoFiles() {
   }
 }
 ghFetchBtn.addEventListener("click", fetchRepoFiles);
+pickerToggleBtn.addEventListener("click", () => {
+  setPickerMinimized(!pickerPanel.classList.contains("minimized"));
+});
 selectAllBtn.addEventListener("click", async () => {
   for (const path of ghPickerState.files) {
     if (ghPickerState.selected.has(path)) continue;
