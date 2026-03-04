@@ -272,7 +272,7 @@ html,body{height:100%;background:var(--bg);font-family:'DM Sans',sans-serif;colo
 .r-item{padding:8px 0;border-bottom:1px solid var(--border2);display:flex;gap:12px;font-size:13px;line-height:1.55}
 .r-item:last-child{border-bottom:none}
 .r-item-label{font-weight:600;color:var(--txt2);min-width:170px;flex-shrink:0;font-size:12px;padding-top:1px}
-.r-item-value{color:var(--txt);flex:1}
+.r-item-value{color:var(--txt);flex:1;white-space:pre-wrap;word-break:break-word}
 .insights-list{padding:0 18px 14px 18px;display:none}
 .insights-list.open{display:flex;flex-direction:column;gap:8px}
 .insight-card{display:flex;gap:12px;padding:12px 14px;border-radius:var(--r2);border:1px solid}
@@ -1454,6 +1454,31 @@ function downloadSecurityPdf(btn) {
   w.onload = () => { w.focus(); setTimeout(()=>w.print(),120); };
 }
 
+const SECURITY_REPORT_SCHEMA_HINT = [
+  "Return strict JSON only (no markdown fences) using this schema:",
+  '{"title":"Security & Scalability Analysis","summary":"...","health_score":0,"health_label":"High risk|Needs hardening|Strong posture","security_score":0,"scalability_score":0,"sections":[{"label":"Score Banner","icon":"bar-chart","content":"...","items":[{"label":"Security Score","value":"..."}]},{"label":"Vulnerability Findings","icon":"alert","content":"...","flags":[{"severity":"critical|high|medium|low","metric":"...","observation":"...","consequence":"..."}]},{"label":"Analysis Sections","icon":"shield","content":"...","insights":[{"title":"Authentication","detail":"...","signal":"positive|neutral|negative"}]},{"label":"Remediation Roadmap","icon":"trending","content":"...","experiments":[{"name":"...","effort":"low|medium|high","timeline":"Do Now|This Sprint|Next Sprint|Long-Term","hypothesis":"...","metric":"..."}]}]}',
+  "Focus domains: authentication, authorization, injection, XSS, secrets, logging, error handling, network security, concurrency, blocking I/O, caching, dependency risk, and scaling bottlenecks."
+].join("\n");
+
+function sanitizeSecurityRawText(rawText) {
+  return String(rawText || "")
+    .replace(/<analysis>[\s\S]*?<\/analysis>/gi, "")
+    .replace(/```(?:json)?/gi, "")
+    .trim();
+}
+function parseJsonCandidates(rawText) {
+  const cleaned = sanitizeSecurityRawText(rawText);
+  const candidates = [cleaned];
+  const jsonBlocks = cleaned.match(/\{[\s\S]*\}/g) || [];
+  jsonBlocks.forEach(block => candidates.push(block));
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {}
+  }
+  return null;
+}
 function extractScore(rawText, labels) {
   for (const label of labels) {
     const re = new RegExp(`${label}\\s*(?:score)?\\s*[:=\\-]?\\s*(\\d{1,3})`, "i");
@@ -1462,9 +1487,68 @@ function extractScore(rawText, labels) {
   }
   return 0;
 }
-function parseDetailedFindings(rawText) {
-  const lines = rawText.split(/\r?\n/);
+function verdictToScore(verdict, domain) {
+  const v = String(verdict || "").toLowerCase();
+  if (!v) return 0;
+  if (domain === "security") {
+    if (/critical/.test(v)) return 10;
+    if (/high risk|poor|unsafe/.test(v)) return 25;
+    if (/needs work|needs hardening|moderate/.test(v)) return 55;
+    if (/good|strong|healthy/.test(v)) return 82;
+    if (/excellent|low risk/.test(v)) return 94;
+  }
+  if (domain === "scalability") {
+    if (/critical|severe/.test(v)) return 15;
+    if (/needs work|bottleneck|poor/.test(v)) return 45;
+    if (/moderate|fair/.test(v)) return 65;
+    if (/good|strong/.test(v)) return 82;
+    if (/excellent/.test(v)) return 94;
+  }
+  return 0;
+}
+function extractVerdict(rawText, domainLabel) {
+  const re = new RegExp(`Overall\s+${domainLabel}\s+Verdict\s*[:\-]\s*([^\n]+)`, "i");
+  const m = rawText.match(re);
+  return m ? m[1].trim() : "";
+}
+function extractExecutiveSummary(rawText) {
+  const sec = rawText.match(/Executive Summary[\s\S]*?Security\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || "";
+  const sca = rawText.match(/Executive Summary[\s\S]*?Scalability\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || "";
+  if (sec && sca) return `Security: ${sec} Scalability: ${sca}`;
+  return sec || sca || "";
+}
+function parseColonSection(rawText, sectionName) {
+  const sectionRe = new RegExp(`${sectionName}\s*:[\t ]*(?:\r?\n)?([\s\S]*?)(?=\n[A-Z][^\n]{1,80}:|\n━━━━━━━━|\nPART\s+\d|$)`, "i");
+  const m = rawText.match(sectionRe);
+  if (!m) return [];
+  return m[1].split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => l.replace(/^[-•]\s*/, ""));
+}
+function parseThreatModelInsights(rawText) {
+  const attack = parseColonSection(rawText, "Attack Surface");
+  const trust = parseColonSection(rawText, "Trust Boundaries");
+  const out = [];
+  if (attack.length) out.push({ title: "Attack Surface", detail: attack.slice(0, 6).join("; "), signal: "negative" });
+  if (trust.length) out.push({ title: "Trust Boundaries", detail: trust.slice(0, 6).join("; "), signal: "neutral" });
+  return out;
+}
+function parseDetailedFindings(rawText, parsed) {
   const findings = [];
+  const parsedFlags = parsed?.sections?.flatMap(s => Array.isArray(s?.flags) ? s.flags : []) || [];
+  parsedFlags.forEach(f => {
+    const sev = String(f.severity || "medium").toUpperCase();
+    findings.push({
+      sev: ["CRITICAL", "HIGH", "MEDIUM", "LOW"].includes(sev) ? sev : "MEDIUM",
+      title: String(f.metric || "Unknown issue"),
+      cwe: "",
+      owasp: "",
+      location: String(f.observation || ""),
+      remediation: String(f.consequence || ""),
+      effort: /high/i.test(f.consequence || "") ? "high" : /low|quick/i.test(f.consequence || "") ? "low" : "medium"
+    });
+  });
+  if (findings.length) return findings;
+
+  const lines = rawText.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/(?:^|\s)(CRITICAL|HIGH|MEDIUM|LOW)\s*[:\-]\s*(.+)$/i);
     if (!m) continue;
@@ -1488,48 +1572,69 @@ function parseDetailedFindings(rawText) {
     }
     findings.push({ sev, title, cwe, owasp, location, remediation, effort });
   }
+  if (!findings.length) {
+    const secLine = rawText.match(/Executive Summary[\s\S]*?Security\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim();
+    const scaLine = rawText.match(/Executive Summary[\s\S]*?Scalability\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim();
+    if (secLine) findings.push({ sev: /critical|remote code execution|missing auth|mitm|pii/i.test(secLine) ? "CRITICAL" : "HIGH", title: secLine.slice(0, 120), cwe: "", owasp: "", location: "Executive Summary", remediation: "Address high-risk security controls immediately.", effort: "high" });
+    if (scaLine) findings.push({ sev: /exhaust|blocking|unbounded|bottleneck/i.test(scaLine) ? "HIGH" : "MEDIUM", title: scaLine.slice(0, 120), cwe: "", owasp: "", location: "Executive Summary", remediation: "Prioritize non-blocking I/O and resource caps.", effort: "medium" });
+  }
   return findings;
 }
 function renderParsedSecurityText(rawText) {
-  const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  let parsed = null;
-  try { parsed = JSON.parse(rawText); } catch {}
+  const cleanedRaw = sanitizeSecurityRawText(rawText);
+  const lines = cleanedRaw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const parsed = parseJsonCandidates(cleanedRaw);
 
-  const secScore = extractScore(rawText, ["security", "security posture", "sec"]) || Number(parsed?.security_score || parsed?.securityScore || parsed?.scores?.security || 0);
-  const scaScore = extractScore(rawText, ["scalability", "performance", "resilience"]) || Number(parsed?.scalability_score || parsed?.scalabilityScore || parsed?.scores?.scalability || 0);
-  const healthFromPayload = Number(parsed?.health_score || parsed?.healthScore || 0);
+  const securityVerdict = extractVerdict(cleanedRaw, "Security");
+  const scalabilityVerdict = extractVerdict(cleanedRaw, "Scalability");
+  const secScore = Number(parsed?.security_score || parsed?.securityScore || parsed?.scores?.security || 0)
+    || extractScore(cleanedRaw, ["security", "security posture", "sec"])
+    || verdictToScore(securityVerdict, "security");
+  const scaScore = Number(parsed?.scalability_score || parsed?.scalabilityScore || parsed?.scores?.scalability || 0)
+    || extractScore(cleanedRaw, ["scalability", "performance", "resilience"])
+    || verdictToScore(scalabilityVerdict, "scalability");
+  const healthFromPayload = Number(parsed?.health_score || parsed?.healthScore || 0) || extractScore(cleanedRaw, ["overall", "health"]);
 
-  const findings = parseDetailedFindings(rawText);
+  const findings = parseDetailedFindings(cleanedRaw, parsed);
   const severityRank = { CRITICAL: 1, HIGH: 2, MEDIUM: 3, LOW: 4 };
-  findings.sort((a, b) => severityRank[a.sev] - severityRank[b.sev]);
+  findings.sort((a, b) => (severityRank[a.sev] || 3) - (severityRank[b.sev] || 3));
 
-  const roadmap = [];
-  const roadmapRe = /(Do Now|This Sprint|Next Sprint|Long-?Term|Immediate)\s*[:\-]\s*([^\n]+)/gi;
-  let rm;
-  while ((rm = roadmapRe.exec(rawText))) {
-    roadmap.push({
-      name: rm[2].trim(),
-      effort: /immediate|now/i.test(rm[1]) ? "low" : /next|long/i.test(rm[1]) ? "high" : "medium",
-      timeline: rm[1].trim(),
-      hypothesis: rm[2].trim(),
-      metric: "Risk reduction and stability uplift",
-    });
+  const roadmap = parsed?.sections?.flatMap(s => Array.isArray(s?.experiments) ? s.experiments : []) || [];
+  if (!roadmap.length) {
+    const roadmapRe = /(Do Now|This Sprint|Next Sprint|Long-?Term|Immediate)\s*[:\-]\s*([^\n]+)/gi;
+    let rm;
+    while ((rm = roadmapRe.exec(cleanedRaw))) {
+      roadmap.push({
+        name: rm[2].trim(),
+        effort: /immediate|now/i.test(rm[1]) ? "low" : /next|long/i.test(rm[1]) ? "high" : "medium",
+        timeline: rm[1].trim(),
+        hypothesis: rm[2].trim(),
+        metric: "Risk reduction and stability uplift",
+      });
+    }
   }
 
-  const thematic = [];
-  const thematicNames = ["Authentication", "Authorization", "Crypto", "Input Validation", "Database", "Caching", "Concurrency", "Statelessness", "Rate Limiting", "Secrets"];
-  thematicNames.forEach(name => {
-    const rx = new RegExp(`${name}\\s*[:\\-]\\s*([^\\n]+)`, "i");
-    const m = rawText.match(rx);
-    if (m) thematic.push({ title: name, detail: m[1].trim(), signal: /good|strong|safe|ok|healthy/i.test(m[1]) ? "positive" : /weak|missing|risk|issue|fail/i.test(m[1]) ? "negative" : "neutral" });
-  });
+  const thematic = parsed?.sections?.flatMap(s => Array.isArray(s?.insights) ? s.insights : []) || [];
+  if (!thematic.length) {
+    const thematicNames = ["Authentication", "Authorization", "Crypto", "Input Validation", "Injection", "XSS", "Database", "Caching", "Concurrency", "Statelessness", "Rate Limiting", "Secrets", "Logging", "Error Handling", "Network Security", "Dependencies"];
+    thematicNames.forEach(name => {
+      const rx = new RegExp(`${name}\\s*[:\\-]\\s*([^\\n]+)`, "i");
+      const m = cleanedRaw.match(rx);
+      if (m) thematic.push({ title: name, detail: m[1].trim(), signal: /good|strong|safe|ok|healthy/i.test(m[1]) ? "positive" : /weak|missing|risk|issue|fail|critical/i.test(m[1]) ? "negative" : "neutral" });
+    });
+  }
+  const threatInsights = parseThreatModelInsights(cleanedRaw);
+  if (threatInsights.length) thematic.push(...threatInsights);
+  if (securityVerdict) thematic.unshift({ title: "Security Verdict", detail: securityVerdict, signal: /critical|high risk/i.test(securityVerdict) ? "negative" : /strong|good|excellent|low risk/i.test(securityVerdict) ? "positive" : "neutral" });
+  if (scalabilityVerdict) thematic.unshift({ title: "Scalability Verdict", detail: scalabilityVerdict, signal: /critical|needs work|poor|bottleneck/i.test(scalabilityVerdict) ? "negative" : /strong|good|excellent/i.test(scalabilityVerdict) ? "positive" : "neutral" });
 
   const overall = healthFromPayload || (secScore && scaScore ? Math.round((secScore + scaScore) / 2) : (secScore || scaScore || 65));
-  const summary = lines.find(l => l.length > 40 && !/score/i.test(l)) || parsed?.summary || "Structured fallback generated from raw security analysis output.";
+  const executiveSummary = extractExecutiveSummary(cleanedRaw);
+  const summary = parsed?.summary || executiveSummary || lines.find(l => /language\s*\/\s*framework/i.test(l)) || lines.find(l => l.length > 40 && !/score/i.test(l)) || "Structured fallback generated from raw security analysis output.";
   const reportData = {
     title: parsed?.title || "Security & Scalability Analysis",
     health_score: overall,
-    health_label: overall >= 85 ? "Strong posture" : overall >= 70 ? "Needs hardening" : "High risk",
+    health_label: parsed?.health_label || (overall >= 85 ? "Strong posture" : overall >= 70 ? "Needs hardening" : "High risk"),
     summary,
     sections: [
       {
@@ -1537,8 +1642,8 @@ function renderParsedSecurityText(rawText) {
         icon: "bar-chart",
         content: "Primary risk posture extracted from the model output.",
         items: [
-          { label: "Security Score", value: secScore ? `${secScore}/100` : "Derived" },
-          { label: "Scalability Score", value: scaScore ? `${scaScore}/100` : "Derived" },
+          { label: "Security Score", value: secScore ? `${secScore}/100` : (securityVerdict || "Derived") },
+          { label: "Scalability Score", value: scaScore ? `${scaScore}/100` : (scalabilityVerdict || "Derived") },
           { label: "Overall", value: `${overall}/100` }
         ]
       },
@@ -1566,16 +1671,25 @@ function renderParsedSecurityText(rawText) {
         experiments: roadmap
       } : null,
       {
+        label: "Report Metadata",
+        icon: "target",
+        content: "Extracted top-level metadata from raw analyzer output.",
+        items: [
+          { label: "Language / Framework", value: cleanedRaw.match(/Language\s*\/\s*Framework\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || "Not detected" },
+          { label: "Analysis Date", value: cleanedRaw.match(/Analysis Date\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || "Not detected" },
+          { label: "Files Analysed", value: cleanedRaw.match(/Files Analysed\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || "Not detected" }
+        ]
+      },
+      {
         label: "Raw Report",
         icon: "target",
         content: "Original backend output for full fidelity.",
-        items: [{ label: "Details", value: rawText.slice(0, 2200) + (rawText.length > 2200 ? " …" : "") }]
+        items: [{ label: "Details", value: cleanedRaw.slice(0, 1000) + (cleanedRaw.length > 1000 ? " … (truncated)" : "") }]
       }
     ].filter(Boolean)
   };
   return renderSecurityReport(reportData);
 }
-
 
 // ─────────────────────────────────────────
 // Main send handler
@@ -1617,13 +1731,18 @@ async function handleSend() {
   showThinking();
 
   // Build request body
+  const securityContext = m === "security" && hasSelectedFiles
+    ? `${query}\n\n${Array.from(ghPickerState.selected).map(path => `=== FILE: ${path} ===\n${ghPickerState.cache.get(path) || ""}`).join("\n\n")}`.trim()
+    : query;
+
   const requestBody = {
-    query: m === "security" && hasSelectedFiles
-      ? `${query}\n\n${Array.from(ghPickerState.selected).map(path => `=== FILE: ${path} ===\n${ghPickerState.cache.get(path) || ""}`).join("\n\n")}`.trim()
+    query: m === "security"
+      ? `${securityContext}\n\n${SECURITY_REPORT_SCHEMA_HINT}`.trim()
       : m === "explain"
       ? query + "\n\nFor explain mode, respond in this exact structure:\n1) Concept Overview (2-4 concise bullets)\n2) Step-by-Step Flow (numbered sequence)\n3) Annotated Code Walkthrough (short code blocks + plain explanation)\n4) Common Mistakes (bullets)\n5) Practical Checklist (actionable bullets)\nKeep sections short, technical, and easy to scan."
       : query,
     mode: m,
+    response_format: m === "security" ? "structured_security_report_v1" : "text",
     history: chatHistory.slice(-10),
     iteration: 0,
   };
