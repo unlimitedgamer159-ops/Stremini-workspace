@@ -470,6 +470,11 @@ html,body{height:100%;background:var(--bg);font-family:'DM Sans',sans-serif;colo
             </div>
             <button class="gh-btn" id="ghFetchBtn" type="button">Fetch</button>
           </div>
+          <div class="gh-field">
+            <label>GitHub token (optional but recommended)</label>
+            <input class="gh-input" id="ghToken" type="password" placeholder="ghp_... (used only in browser, stored locally)" autocomplete="off" spellcheck="false"/>
+            <div class="gh-hint">If you see 403 errors, add a Personal Access Token with repo read access.</div>
+          </div>
           <div class="picker-panel" id="pickerPanel">
             <div class="picker-toolbar">
               <div class="picker-meta" id="pickerMeta">No files loaded.</div>
@@ -518,6 +523,7 @@ let chatHistory = [];
 let implCount = 0, reviewCount = 0, debugCount = 0;
 let outputStore = {};
 let ghPickerState = { owner:"", repo:"", files:[], selected:new Set(), cache:new Map(), usedChars:0 };
+const GH_TOKEN_STORAGE_KEY = "stremini_github_token";
 
 // ─────────────────────────────────────────
 // DOM refs
@@ -529,6 +535,7 @@ const msgsWrap    = document.getElementById("msgsWrap");
 const githubPanel = document.getElementById("githubPanel");
 const inputWrap   = document.getElementById("inputWrap");
 const ghRepoUrl   = document.getElementById("ghRepoUrl");
+const ghToken     = document.getElementById("ghToken");
 const ghFetchBtn  = document.getElementById("ghFetchBtn");
 const pickerPanel = document.getElementById("pickerPanel");
 const pickerList  = document.getElementById("pickerList");
@@ -549,6 +556,15 @@ ta.addEventListener("input", function() {
 ta.addEventListener("keydown", function(e) {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
 });
+
+if (ghToken) {
+  ghToken.value = localStorage.getItem(GH_TOKEN_STORAGE_KEY) || "";
+  ghToken.addEventListener("input", () => {
+    const v = ghToken.value.trim();
+    if (v) localStorage.setItem(GH_TOKEN_STORAGE_KEY, v);
+    else localStorage.removeItem(GH_TOKEN_STORAGE_KEY);
+  });
+}
 
 function parseGitHubRepoInput(input) {
   const cleaned = input.trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\.git$/i, "").replace(/^\/+|\/+$/g, "");
@@ -585,13 +601,25 @@ function decodeGitHubContent(data) {
   return String(data.content);
 }
 async function githubApiFetch(url) {
-  const res = await fetch(url, { headers: { "Accept": "application/vnd.github+json" } });
+  const headers = { "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+  const token = (ghToken && ghToken.value || "").trim();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(url, { headers });
   const text = await res.text();
   let data;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
   if (!res.ok) {
-    const msg = data && data.message ? data.message : `GitHub API request failed (${res.status})`;
-    throw new Error(msg);
+    const baseMsg = data && data.message ? data.message : `GitHub API request failed (${res.status})`;
+    if (res.status === 403) {
+      const hint = token
+        ? "Token lacks access or rate limit exceeded. Check token scopes / repo access."
+        : "GitHub blocked unauthenticated access (rate limit or private repo). Add a GitHub token.";
+      throw new Error(`403: ${baseMsg}. ${hint}`);
+    }
+    if (res.status === 404) {
+      throw new Error(`404: ${baseMsg}. Repo not found or token cannot access it.`);
+    }
+    throw new Error(`${res.status}: ${baseMsg}`);
   }
   return data;
 }
