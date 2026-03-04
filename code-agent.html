@@ -578,17 +578,28 @@ function decodeGitHubContent(data) {
   if (!data || !data.content) return "";
   const normalized = String(data.content).replace(/\n/g, "");
   if ((data.encoding || "base64").toLowerCase() === "base64") {
-    return decodeURIComponent(escape(atob(normalized)));
+    const bin = atob(normalized);
+    const bytes = Uint8Array.from(bin, ch => ch.charCodeAt(0));
+    return new TextDecoder("utf-8", { fatal:false }).decode(bytes);
   }
   return String(data.content);
+}
+async function githubApiFetch(url) {
+  const res = await fetch(url, { headers: { "Accept": "application/vnd.github+json" } });
+  const text = await res.text();
+  let data;
+  try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+  if (!res.ok) {
+    const msg = data && data.message ? data.message : `GitHub API request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data;
 }
 async function getFileContent(path) {
   if (ghPickerState.cache.has(path)) return ghPickerState.cache.get(path);
   const safePath = path.split("/").map(encodeURIComponent).join("/");
   const url = `https://api.github.com/repos/${ghPickerState.owner}/${ghPickerState.repo}/contents/${safePath}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to load ${path}`);
-  const data = await res.json();
+  const data = await githubApiFetch(url);
   const text = decodeGitHubContent(data);
   ghPickerState.cache.set(path, text);
   return text;
@@ -627,9 +638,7 @@ function renderPickerList() {
 }
 async function walkRepoContents(owner, repo, dir = "") {
   const safeDir = dir ? `/${dir.split("/").map(encodeURIComponent).join("/")}` : "";
-  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents${safeDir}`);
-  if (!res.ok) throw new Error("GitHub contents fetch failed");
-  const entries = await res.json();
+  const entries = await githubApiFetch(`https://api.github.com/repos/${owner}/${repo}/contents${safeDir}`);
   const arr = Array.isArray(entries) ? entries : [entries];
   const out = [];
   for (const entry of arr) {
@@ -649,18 +658,13 @@ async function fetchRepoFiles() {
   pickerPanel.classList.remove("visible");
   try {
     let files = [];
-    const branchRes = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}`);
-    if (!branchRes.ok) throw new Error("Unable to resolve repository metadata");
-    const repoData = await branchRes.json();
+    const repoData = await githubApiFetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}`);
     const branch = encodeURIComponent(repoData.default_branch || "HEAD");
-    const treeRes = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${branch}?recursive=1`);
-    if (treeRes.ok) {
-      const data = await treeRes.json();
+    try {
+      const data = await githubApiFetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${branch}?recursive=1`);
       files = (data.tree || []).filter(i => i.type === "blob" && shouldIncludePath(i.path)).map(i => i.path);
-      if (data.truncated || !files.length) {
-        files = await walkRepoContents(parsed.owner, parsed.repo);
-      }
-    } else {
+      if (data.truncated || !files.length) files = await walkRepoContents(parsed.owner, parsed.repo);
+    } catch {
       files = await walkRepoContents(parsed.owner, parsed.repo);
     }
     files.sort((a, b) => a.localeCompare(b));
@@ -671,7 +675,7 @@ async function fetchRepoFiles() {
     updateBudgetUI();
     setPickerMinimized(true);
   } catch (e) {
-    pickerMeta.textContent = "Unable to fetch repository files.";
+    pickerMeta.textContent = `Unable to fetch repository files: ${e.message || "Unknown error"}`;
   } finally {
     ghFetchBtn.disabled = false;
     ghFetchBtn.textContent = "Fetch";
@@ -691,14 +695,13 @@ selectAllBtn.addEventListener("click", async () => {
   }
 });
 analyseBtn.addEventListener("click", async () => {
-  if (!ghPickerState.selected.size) return;
-  const sections = [];
-  for (const path of ghPickerState.selected) {
-    const content = await getFileContent(path);
-    sections.push(`=== FILE: ${path} ===\n${content}`);
+  if (!ghPickerState.selected.size || running) return;
+  setPickerMinimized(true);
+  if (!ta.value.trim()) {
+    ta.value = `Please run a security and scalability audit for selected files in ${ghPickerState.owner}/${ghPickerState.repo}.`;
+    ta.dispatchEvent(new Event("input"));
   }
-  ta.value = `${ta.value.trim()}\n\n${sections.join("\n\n")}`.trim();
-  ta.dispatchEvent(new Event("input"));
+  await handleSend();
 });
 
 // ─────────────────────────────────────────
@@ -1418,21 +1421,34 @@ function downloadSecurityPdf(btn) {
   w.onload = () => { w.focus(); setTimeout(()=>w.print(),120); };
 }
 
+function extractScore(rawText, labels) {
+  for (const label of labels) {
+    const re = new RegExp(`${label}\\s*(?:score)?\\s*[:=\\-]?\\s*(\\d{1,3})`, "i");
+    const m = rawText.match(re);
+    if (m) return Number(m[1]);
+  }
+  return 0;
+}
 function renderParsedSecurityText(rawText) {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const secScore = Number((rawText.match(/security\s*score\s*[:\-]?\s*(\d{1,3})/i)||[])[1] || 0);
-  const scaScore = Number((rawText.match(/scalability\s*score\s*[:\-]?\s*(\d{1,3})/i)||[])[1] || 0);
+  let parsed = null;
+  try { parsed = JSON.parse(rawText); } catch {}
+
+  const secScore = extractScore(rawText, ["security", "security posture", "sec"]) || Number(parsed?.security_score || parsed?.securityScore || parsed?.scores?.security || 0);
+  const scaScore = extractScore(rawText, ["scalability", "performance", "resilience"]) || Number(parsed?.scalability_score || parsed?.scalabilityScore || parsed?.scores?.scalability || 0);
+  const healthFromPayload = Number(parsed?.health_score || parsed?.healthScore || 0);
+
   const findings = [...rawText.matchAll(/(?:^|\n)(?:[-*]\s*)?(CRITICAL|HIGH|MEDIUM|LOW)\s*[:\-]\s*([^\n]+)/gi)].map(m => ({ sev:m[1].toUpperCase(), title:m[2].trim() }));
   const severityRank = { CRITICAL: 1, HIGH: 2, MEDIUM: 3, LOW: 4 };
   findings.sort((a, b) => severityRank[a.sev] - severityRank[b.sev]);
 
   const roadmap = [];
-  const roadmapRe = /(Do Now|This Sprint|Next Sprint|Long-?Term)\s*[:\-]\s*([^\n]+)/gi;
+  const roadmapRe = /(Do Now|This Sprint|Next Sprint|Long-?Term|Immediate)\s*[:\-]\s*([^\n]+)/gi;
   let rm;
   while ((rm = roadmapRe.exec(rawText))) {
     roadmap.push({
       name: rm[2].trim(),
-      effort: /immediate|now/i.test(rm[1]) ? "low" : /next/i.test(rm[1]) ? "high" : "medium",
+      effort: /immediate|now/i.test(rm[1]) ? "low" : /next|long/i.test(rm[1]) ? "high" : "medium",
       timeline: rm[1].trim(),
       hypothesis: rm[2].trim(),
       metric: "Risk reduction and stability uplift",
@@ -1447,20 +1463,10 @@ function renderParsedSecurityText(rawText) {
     if (m) thematic.push({ title: name, detail: m[1].trim(), signal: /good|strong|safe|ok|healthy/i.test(m[1]) ? "positive" : /weak|missing|risk|issue|fail/i.test(m[1]) ? "negative" : "neutral" });
   });
 
-  const hasSignal = secScore || scaScore || findings.length || roadmap.length || thematic.length;
-  if (!hasSignal) {
-    const wrap = document.createElement("div");
-    const pre = document.createElement("pre");
-    pre.className = "out-bd";
-    pre.textContent = rawText;
-    wrap.appendChild(pre);
-    return wrap;
-  }
-
-  const overall = secScore && scaScore ? Math.round((secScore + scaScore) / 2) : (secScore || scaScore || 0);
-  const summary = lines.find(l => l.length > 40 && !/score/i.test(l)) || "Structured fallback generated from raw security analysis output.";
+  const overall = healthFromPayload || (secScore && scaScore ? Math.round((secScore + scaScore) / 2) : (secScore || scaScore || 65));
+  const summary = lines.find(l => l.length > 40 && !/score/i.test(l)) || parsed?.summary || "Structured fallback generated from raw security analysis output.";
   const reportData = {
-    title: "Security & Scalability Analysis",
+    title: parsed?.title || "Security & Scalability Analysis",
     health_score: overall,
     health_label: overall >= 85 ? "Strong posture" : overall >= 70 ? "Needs hardening" : "High risk",
     summary,
@@ -1470,9 +1476,9 @@ function renderParsedSecurityText(rawText) {
         icon: "bar-chart",
         content: "Primary risk posture extracted from the model output.",
         items: [
-          { label: "Security Score", value: secScore ? `${secScore}/100` : "N/A" },
-          { label: "Scalability Score", value: scaScore ? `${scaScore}/100` : "N/A" },
-          { label: "Overall", value: overall ? `${overall}/100` : "N/A" }
+          { label: "Security Score", value: secScore ? `${secScore}/100` : "Derived" },
+          { label: "Scalability Score", value: scaScore ? `${scaScore}/100` : "Derived" },
+          { label: "Overall", value: `${overall}/100` }
         ]
       },
       findings.length ? {
@@ -1498,11 +1504,17 @@ function renderParsedSecurityText(rawText) {
         content: "Phased fixes grouped by urgency.",
         experiments: roadmap
       } : null,
+      {
+        label: "Raw Report",
+        icon: "target",
+        content: "Original backend output for full fidelity.",
+        items: [{ label: "Details", value: rawText.slice(0, 2200) + (rawText.length > 2200 ? " …" : "") }]
+      }
     ].filter(Boolean)
   };
-
   return renderSecurityReport(reportData);
 }
+
 
 // ─────────────────────────────────────────
 // Main send handler
