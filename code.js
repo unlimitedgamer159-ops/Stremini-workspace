@@ -157,7 +157,7 @@ Required format (exact section order):
 List up to 8 findings, highest risk first. Use this compact template for each finding:
 
 ### [Severity] Finding Title
-- **Where:** `path/to/file` → `functionName` (line/pattern)
+- **Where:** \`path/to/file\` → \`functionName\` (line/pattern)
 - **Why it matters:** one sentence in business terms.
 - **Evidence:** quote the exact risky code or behavior.
 - **Exploit path:** brief, concrete attacker flow (1-3 steps).
