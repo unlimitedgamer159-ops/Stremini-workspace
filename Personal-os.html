@@ -526,6 +526,13 @@ function parseIntoSections(content) {
   return sections;
 }
 
+function formatInlineMarkdown(text) {
+  const safe = esc(text);
+  return safe
+    .replace(/\*\*([^*][\s\S]*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
 function renderSectionBody(text, accentColor) {
   const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
   const frag = document.createDocumentFragment();
@@ -566,13 +573,13 @@ function renderSectionBody(text, accentColor) {
       if (colonIdx > -1 && colonIdx < 45) { title = content.slice(0,colonIdx); body = content.slice(colonIdx+1).trim(); }
       const step = document.createElement("div");
       step.className = "rs-step";
-      step.innerHTML = `<div class="rs-step-num ${stepColors[i%stepColors.length]}">${i+1}</div><div class="rs-step-content">${title?`<div class="rs-step-title">${esc(title)}</div>`:""}${esc(body)}</div>`;
+      step.innerHTML = `<div class="rs-step-num ${stepColors[i%stepColors.length]}">${i+1}</div><div class="rs-step-content">${title?`<div class="rs-step-title">${formatInlineMarkdown(title)}</div>`:""}${formatInlineMarkdown(body)}</div>`;
       stepList.appendChild(step);
     });
     frag.appendChild(stepList);
     // Render any non-numbered lines as paras
     lines.filter(l => !/^\d+\.\s/.test(l)).forEach(line => {
-      const p = document.createElement("div"); p.className="rs-para"; p.textContent=line; frag.appendChild(p);
+      const p = document.createElement("div"); p.className="rs-para"; p.innerHTML=formatInlineMarkdown(line); frag.appendChild(p);
     });
     return frag;
   }
@@ -591,7 +598,7 @@ function renderSectionBody(text, accentColor) {
         const key = content.slice(0,colonIdx).trim();
         const val = content.slice(colonIdx+1).trim();
         const k = document.createElement("div"); k.className="rs-kv-key"; k.textContent=key;
-        const v = document.createElement("div"); v.className="rs-kv-val"; v.textContent=val;
+        const v = document.createElement("div"); v.className="rs-kv-val"; v.innerHTML=formatInlineMarkdown(val);
         grid.appendChild(k); grid.appendChild(v);
       });
       frag.appendChild(grid);
@@ -613,14 +620,14 @@ function renderSectionBody(text, accentColor) {
         bulletLines.forEach((line,i) => {
           const text = line.replace(/^[-*•]\s+/,"");
           const item = document.createElement("div"); item.className="rs-list-item";
-          item.innerHTML = `<span class="rs-list-bullet ${bColors[i%bColors.length]}"></span><span>${esc(text)}</span>`;
+          item.innerHTML = `<span class="rs-list-bullet ${bColors[i%bColors.length]}"></span><span>${formatInlineMarkdown(text)}</span>`;
           list.appendChild(item);
         });
         frag.appendChild(list);
       }
     }
     lines.filter(l => !/^[-*•]\s/.test(l)).forEach(line => {
-      const p = document.createElement("div"); p.className="rs-para"; p.textContent=line; frag.appendChild(p);
+      const p = document.createElement("div"); p.className="rs-para"; p.innerHTML=formatInlineMarkdown(line); frag.appendChild(p);
     });
     return frag;
   }
@@ -633,7 +640,7 @@ function renderSectionBody(text, accentColor) {
       const colonIdx = line.indexOf(":");
       const key = line.slice(0,colonIdx).trim(); const val = line.slice(colonIdx+1).trim();
       const k = document.createElement("div"); k.className="rs-kv-key"; k.textContent=key;
-      const v = document.createElement("div"); v.className="rs-kv-val"; v.textContent=val;
+      const v = document.createElement("div"); v.className="rs-kv-val"; v.innerHTML=formatInlineMarkdown(val);
       grid.appendChild(k); grid.appendChild(v);
     });
     frag.appendChild(grid);
@@ -655,7 +662,7 @@ function renderSectionBody(text, accentColor) {
   // Default paragraphs
   text.split(/\n{2,}/).forEach(para => {
     if (!para.trim()) return;
-    const p = document.createElement("div"); p.className="rs-para"; p.textContent=para.trim(); frag.appendChild(p);
+    const p = document.createElement("div"); p.className="rs-para"; p.innerHTML=formatInlineMarkdown(para.trim()); frag.appendChild(p);
   });
   return frag;
 }
@@ -753,6 +760,93 @@ function autoExtractMemory(content, respStatus) {
   if (respStatus==="HABITS") {const m=content.match(/Habit Name:\s*(.+)/);if(m){const h=m[1].trim();if(h&&!memory.habits.includes(h)){memory.habits.push(h);refreshMemoryPanel();updateStats();}}}
 }
 
+function inferTaskType(query) {
+  const q = (query || "").toLowerCase();
+  if (/(goal|target|milestone|kpi|objective)/.test(q)) return "goals";
+  if (/(habit|routine|streak|daily|consistency)/.test(q)) return "habits";
+  if (/(reflect|decision|should i|choose|dilemma|uncertain)/.test(q)) return "reflect";
+  if (/(plan|roadmap|strategy|timeline|execution|launch)/.test(q)) return "plan";
+  if (/(memory|remember|recall|pattern|history)/.test(q)) return "memory";
+  return "chat";
+}
+
+function buildTaskAlignedQuery(query, selectedMode) {
+  const inferredTask = inferTaskType(query);
+  const modeMismatch = inferredTask !== "chat" && inferredTask !== selectedMode;
+  const modeGuides = {
+    chat: [
+      "You are in General Conversation mode.",
+      "Write clear markdown using these exact sections:",
+      "## Quick Answer",
+      "## Why This Matters",
+      "## What To Do",
+      "## Watch Out For",
+      "## Next Step"
+    ],
+    goals: [
+      "You are in Goal Architecture mode.",
+      "Turn the request into a measurable goal plan.",
+      "Write markdown using these exact sections:",
+      "## Goal Statement",
+      "## Why This Goal Matters",
+      "## Success Metrics",
+      "## 90-Day Milestones",
+      "## Immediate Actions",
+      "## Risks & Obstacles"
+    ],
+    habits: [
+      "You are in Habit Design mode.",
+      "Design an implementation-ready habit system.",
+      "Write markdown using these exact sections:",
+      "## Habit Blueprint",
+      "## The Habit Loop",
+      "## Implementation Intention",
+      "## Daily Tracking System",
+      "## Minimum Viable Version",
+      "## Failure Recovery Plan"
+    ],
+    reflect: [
+      "You are in Reflection & Decision mode.",
+      "Provide balanced analysis before recommendation.",
+      "Write markdown using these exact sections:",
+      "## Situation Snapshot",
+      "## What's Actually At Stake",
+      "## Your Options",
+      "## What The Data Says",
+      "## Gut Check",
+      "## Recommended Decision",
+      "## The Uncomfortable Question"
+    ],
+    plan: [
+      "You are in Strategic Execution Plan mode.",
+      "Return execution order with immediate action detail.",
+      "Write markdown using these exact sections:",
+      "## Objective",
+      "## Phase Breakdown",
+      "## Priority Sequence",
+      "## Next 7 Days",
+      "## Resources Needed",
+      "## Risks & Contingencies"
+    ],
+    memory: [
+      "You are in Memory & Pattern Recognition mode.",
+      "Use known context and suggest memory updates.",
+      "Write markdown using these exact sections:",
+      "## What I Found",
+      "## Patterns I See",
+      "## Connections",
+      "## Suggested Updates",
+      "## Reflection Prompt"
+    ]
+  };
+
+  const mismatchNote = modeMismatch
+    ? `Task hint: user request sounds closest to ${inferredTask.toUpperCase()} mode, but stay in ${selectedMode.toUpperCase()} mode unless user asks to switch.`
+    : `Task hint: request aligns with ${selectedMode.toUpperCase()} mode.`;
+
+  return `${query}\n\n---\nResponse contract:\n${mismatchNote}\n${(modeGuides[selectedMode] || modeGuides.chat).join("\n")}`;
+}
+
 async function handleSend() {
   const query=ta.value.trim();if(!query||running)return;
   addMsg("user",esc(query));addRecent(query,mode);history.push({role:"user",content:query});
@@ -760,56 +854,7 @@ async function handleSend() {
   const statusLabels={chat:"Thinking…",goals:"Architecting goal…",habits:"Designing habit…",reflect:"Reflecting…",plan:"Building plan…",memory:"Querying memory…"};
   setStatus("run",statusLabels[mode]||"Processing…");addThinking();
   let data;
-  const structuredGuideByMode = {
-    chat: [
-      "Respond like ChatGPT with clear, concise markdown sections.",
-      "Use this structure:",
-      "1) Quick Answer",
-      "2) Why This Matters",
-      "3) Recommended Next Steps",
-      "4) Watchouts"
-    ].join("\n"),
-    goals: [
-      "Return a practical goal architecture.",
-      "Use this structure:",
-      "1) Goal Statement",
-      "2) Success Metrics",
-      "3) Milestones",
-      "4) Immediate Actions"
-    ].join("\n"),
-    habits: [
-      "Return a habit system that is easy to execute.",
-      "Use this structure:",
-      "1) Habit Design",
-      "2) Trigger + Routine + Reward",
-      "3) Daily/Weekly Tracking",
-      "4) Failure Recovery Plan"
-    ].join("\n"),
-    reflect: [
-      "Return a decision reflection brief.",
-      "Use this structure:",
-      "1) Situation Snapshot",
-      "2) Key Insights",
-      "3) Decision Options",
-      "4) Recommended Decision"
-    ].join("\n"),
-    plan: [
-      "Return a strategic execution plan.",
-      "Use this structure:",
-      "1) Objective",
-      "2) Plan Breakdown",
-      "3) Priority Sequence",
-      "4) Next 7 Days"
-    ].join("\n"),
-    memory: [
-      "Return memory retrieval in structured bullets.",
-      "Use this structure:",
-      "1) Relevant Memory",
-      "2) Patterns",
-      "3) Suggested Update"
-    ].join("\n")
-  };
-  const structuredQuery = `${query}\n\n${structuredGuideByMode[mode] || structuredGuideByMode.chat}`;
+  const structuredQuery = buildTaskAlignedQuery(query, mode);
   try {
     const res=await fetch(BACKEND,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:structuredQuery,mode,history:history.slice(-14),memory,context:{currentGoals:memory.goals.slice(-3),recentHabits:memory.habits.slice(-3),pendingDecisions:memory.decisions.slice(-3)}})});
     data=await res.json();
