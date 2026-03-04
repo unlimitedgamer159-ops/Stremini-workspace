@@ -129,6 +129,9 @@ html,body{height:100%;background:var(--bg);font-family:'DM Sans',sans-serif;colo
 .picker-toggle{font-size:11px;border:1px solid var(--rose-border);background:var(--rose-bg);color:var(--rose);padding:4px 8px;border-radius:4px;cursor:pointer;font-weight:600}
 .picker-panel.minimized .picker-actions,.picker-panel.minimized .budget,.picker-panel.minimized #budgetMeta,.picker-panel.minimized .picker-list{display:none}
 .picker-panel.minimized .picker-toolbar{margin-bottom:0}
+.github-panel.compact{padding:8px 10px;gap:6px}
+.github-panel.compact .github-row,.github-panel.compact #ghTokenWrap{display:none}
+.github-panel.compact .github-panel-title{margin-bottom:0;font-size:11.5px}
 .budget{height:7px;background:#f3f4f6;border-radius:99px;overflow:hidden;margin-bottom:8px;border:1px solid var(--border)}
 .budget-bar{height:100%;width:0;background:var(--green);transition:width .2s ease,background .2s ease}
 .picker-list{max-height:220px;overflow:auto;border:1px solid var(--border2);border-radius:6px;background:#fff}
@@ -470,7 +473,7 @@ html,body{height:100%;background:var(--bg);font-family:'DM Sans',sans-serif;colo
             </div>
             <button class="gh-btn" id="ghFetchBtn" type="button">Fetch</button>
           </div>
-          <div class="gh-field">
+          <div class="gh-field" id="ghTokenWrap">
             <label>GitHub token (optional but recommended)</label>
             <input class="gh-input" id="ghToken" type="password" placeholder="ghp_... (used only in browser, stored locally)" autocomplete="off" spellcheck="false"/>
             <div class="gh-hint">If you see 403 errors, add a Personal Access Token with repo read access.</div>
@@ -536,6 +539,7 @@ const githubPanel = document.getElementById("githubPanel");
 const inputWrap   = document.getElementById("inputWrap");
 const ghRepoUrl   = document.getElementById("ghRepoUrl");
 const ghToken     = document.getElementById("ghToken");
+const ghTokenWrap = document.getElementById("ghTokenWrap");
 const ghFetchBtn  = document.getElementById("ghFetchBtn");
 const pickerPanel = document.getElementById("pickerPanel");
 const pickerList  = document.getElementById("pickerList");
@@ -582,6 +586,7 @@ function shouldIncludePath(path) {
 
 function setPickerMinimized(minimized) {
   pickerPanel.classList.toggle("minimized", minimized);
+  githubPanel.classList.toggle("compact", minimized);
   pickerToggleBtn.textContent = minimized ? "Expand" : "Minimize";
 }
 function updateBudgetUI() {
@@ -1457,6 +1462,34 @@ function extractScore(rawText, labels) {
   }
   return 0;
 }
+function parseDetailedFindings(rawText) {
+  const lines = rawText.split(/\r?\n/);
+  const findings = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/(?:^|\s)(CRITICAL|HIGH|MEDIUM|LOW)\s*[:\-]\s*(.+)$/i);
+    if (!m) continue;
+    const sev = m[1].toUpperCase();
+    const title = m[2].trim();
+    let cwe = "";
+    let owasp = "";
+    let location = "";
+    let remediation = "";
+    let effort = "medium";
+    for (let j = i + 1; j < Math.min(lines.length, i + 8); j++) {
+      const ln = lines[j].trim();
+      if (!ln) continue;
+      if (/(CRITICAL|HIGH|MEDIUM|LOW)\s*[:\-]/i.test(ln)) break;
+      cwe = cwe || (ln.match(/CWE[-\s:]?(\d+)/i)?.[1] ? `CWE-${ln.match(/CWE[-\s:]?(\d+)/i)[1]}` : "");
+      owasp = owasp || (ln.match(/OWASP\s*[:\-]?\s*([A-Z0-9:.-]+)/i)?.[1] || "");
+      if (!location && /location|file|line/i.test(ln)) location = ln.replace(/^[-*]\s*/, "");
+      if (!remediation && /remediation|fix|mitigation|recommend/i.test(ln)) remediation = ln.replace(/^[-*]\s*/, "");
+      if (/low effort|quick win|easy/i.test(ln)) effort = "low";
+      if (/high effort|complex|migration/i.test(ln)) effort = "high";
+    }
+    findings.push({ sev, title, cwe, owasp, location, remediation, effort });
+  }
+  return findings;
+}
 function renderParsedSecurityText(rawText) {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   let parsed = null;
@@ -1466,7 +1499,7 @@ function renderParsedSecurityText(rawText) {
   const scaScore = extractScore(rawText, ["scalability", "performance", "resilience"]) || Number(parsed?.scalability_score || parsed?.scalabilityScore || parsed?.scores?.scalability || 0);
   const healthFromPayload = Number(parsed?.health_score || parsed?.healthScore || 0);
 
-  const findings = [...rawText.matchAll(/(?:^|\n)(?:[-*]\s*)?(CRITICAL|HIGH|MEDIUM|LOW)\s*[:\-]\s*([^\n]+)/gi)].map(m => ({ sev:m[1].toUpperCase(), title:m[2].trim() }));
+  const findings = parseDetailedFindings(rawText);
   const severityRank = { CRITICAL: 1, HIGH: 2, MEDIUM: 3, LOW: 4 };
   findings.sort((a, b) => severityRank[a.sev] - severityRank[b.sev]);
 
@@ -1512,12 +1545,12 @@ function renderParsedSecurityText(rawText) {
       findings.length ? {
         label: "Vulnerability Findings",
         icon: "alert",
-        content: "Prioritized by severity for immediate triage.",
+        content: "Prioritized by severity with extracted context.",
         flags: findings.map(f => ({
           severity: f.sev.toLowerCase(),
-          metric: f.title,
-          observation: `Mapped severity: ${f.sev}`,
-          consequence: "Review attack path and implement remediation in the nearest sprint."
+          metric: `${f.title}${f.cwe ? ` · ${f.cwe}` : ""}${f.owasp ? ` · OWASP ${f.owasp}` : ""}`,
+          observation: f.location || `Mapped severity: ${f.sev}`,
+          consequence: f.remediation || `Fix effort: ${f.effort}`,
         }))
       } : null,
       thematic.length ? {
