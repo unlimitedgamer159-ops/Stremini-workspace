@@ -1455,15 +1455,17 @@ function downloadSecurityPdf(btn) {
 }
 
 function extractScore(rawText, labels) {
+  const text = typeof rawText === "string" ? rawText : String(rawText ?? "");
   for (const label of labels) {
     const re = new RegExp(`${label}\\s*(?:score)?\\s*[:=\\-]?\\s*(\\d{1,3})`, "i");
-    const m = rawText.match(re);
+    const m = text.match(re);
     if (m) return Number(m[1]);
   }
   return 0;
 }
 function parseDetailedFindings(rawText) {
-  const lines = rawText.split(/\r?\n/);
+  const text = typeof rawText === "string" ? rawText : String(rawText ?? "");
+  const lines = text.split(/\r?\n/);
   const findings = [];
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/(?:^|\s)(CRITICAL|HIGH|MEDIUM|LOW)\s*[:\-]\s*(.+)$/i);
@@ -1491,22 +1493,23 @@ function parseDetailedFindings(rawText) {
   return findings;
 }
 function renderParsedSecurityText(rawText) {
-  const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const text = typeof rawText === "string" ? rawText : String(rawText ?? "");
+  const lines = text.split(/\r?\n/).map(l => (l == null ? "" : String(l).trim())).filter(Boolean);
   let parsed = null;
-  try { parsed = JSON.parse(rawText); } catch {}
+  try { parsed = JSON.parse(text); } catch {}
 
-  const secScore = extractScore(rawText, ["security", "security posture", "sec"]) || Number(parsed?.security_score || parsed?.securityScore || parsed?.scores?.security || 0);
-  const scaScore = extractScore(rawText, ["scalability", "performance", "resilience"]) || Number(parsed?.scalability_score || parsed?.scalabilityScore || parsed?.scores?.scalability || 0);
+  const secScore = extractScore(text, ["security", "security posture", "sec"]) || Number(parsed?.security_score || parsed?.securityScore || parsed?.scores?.security || 0);
+  const scaScore = extractScore(text, ["scalability", "performance", "resilience"]) || Number(parsed?.scalability_score || parsed?.scalabilityScore || parsed?.scores?.scalability || 0);
   const healthFromPayload = Number(parsed?.health_score || parsed?.healthScore || 0);
 
-  const findings = parseDetailedFindings(rawText);
+  const findings = parseDetailedFindings(text);
   const severityRank = { CRITICAL: 1, HIGH: 2, MEDIUM: 3, LOW: 4 };
   findings.sort((a, b) => severityRank[a.sev] - severityRank[b.sev]);
 
   const roadmap = [];
   const roadmapRe = /(Do Now|This Sprint|Next Sprint|Long-?Term|Immediate)\s*[:\-]\s*([^\n]+)/gi;
   let rm;
-  while ((rm = roadmapRe.exec(rawText))) {
+  while ((rm = roadmapRe.exec(text))) {
     roadmap.push({
       name: rm[2].trim(),
       effort: /immediate|now/i.test(rm[1]) ? "low" : /next|long/i.test(rm[1]) ? "high" : "medium",
@@ -1520,7 +1523,7 @@ function renderParsedSecurityText(rawText) {
   const thematicNames = ["Authentication", "Authorization", "Crypto", "Input Validation", "Database", "Caching", "Concurrency", "Statelessness", "Rate Limiting", "Secrets"];
   thematicNames.forEach(name => {
     const rx = new RegExp(`${name}\\s*[:\\-]\\s*([^\\n]+)`, "i");
-    const m = rawText.match(rx);
+    const m = text.match(rx);
     if (m) thematic.push({ title: name, detail: m[1].trim(), signal: /good|strong|safe|ok|healthy/i.test(m[1]) ? "positive" : /weak|missing|risk|issue|fail/i.test(m[1]) ? "negative" : "neutral" });
   });
 
@@ -1569,7 +1572,7 @@ function renderParsedSecurityText(rawText) {
         label: "Raw Report",
         icon: "target",
         content: "Original backend output for full fidelity.",
-        items: [{ label: "Details", value: rawText.slice(0, 2200) + (rawText.length > 2200 ? " …" : "") }]
+        items: [{ label: "Details", value: text.slice(0, 2200) + (text.length > 2200 ? " …" : "") }]
       }
     ].filter(Boolean)
   };
