@@ -272,7 +272,7 @@ html,body{height:100%;background:var(--bg);font-family:'DM Sans',sans-serif;colo
 .r-item{padding:8px 0;border-bottom:1px solid var(--border2);display:flex;gap:12px;font-size:13px;line-height:1.55}
 .r-item:last-child{border-bottom:none}
 .r-item-label{font-weight:600;color:var(--txt2);min-width:170px;flex-shrink:0;font-size:12px;padding-top:1px}
-.r-item-value{color:var(--txt);flex:1}
+.r-item-value{color:var(--txt);flex:1;white-space:pre-wrap;word-break:break-word}
 .insights-list{padding:0 18px 14px 18px;display:none}
 .insights-list.open{display:flex;flex-direction:column;gap:8px}
 .insight-card{display:flex;gap:12px;padding:12px 14px;border-radius:var(--r2);border:1px solid}
@@ -1517,6 +1517,20 @@ function extractExecutiveSummary(rawText) {
   if (sec && sca) return `Security: ${sec} Scalability: ${sca}`;
   return sec || sca || "";
 }
+function parseColonSection(rawText, sectionName) {
+  const sectionRe = new RegExp(`${sectionName}\s*:[\t ]*(?:\r?\n)?([\s\S]*?)(?=\n[A-Z][^\n]{1,80}:|\n━━━━━━━━|\nPART\s+\d|$)`, "i");
+  const m = rawText.match(sectionRe);
+  if (!m) return [];
+  return m[1].split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => l.replace(/^[-•]\s*/, ""));
+}
+function parseThreatModelInsights(rawText) {
+  const attack = parseColonSection(rawText, "Attack Surface");
+  const trust = parseColonSection(rawText, "Trust Boundaries");
+  const out = [];
+  if (attack.length) out.push({ title: "Attack Surface", detail: attack.slice(0, 6).join("; "), signal: "negative" });
+  if (trust.length) out.push({ title: "Trust Boundaries", detail: trust.slice(0, 6).join("; "), signal: "neutral" });
+  return out;
+}
 function parseDetailedFindings(rawText, parsed) {
   const findings = [];
   const parsedFlags = parsed?.sections?.flatMap(s => Array.isArray(s?.flags) ? s.flags : []) || [];
@@ -1609,6 +1623,8 @@ function renderParsedSecurityText(rawText) {
       if (m) thematic.push({ title: name, detail: m[1].trim(), signal: /good|strong|safe|ok|healthy/i.test(m[1]) ? "positive" : /weak|missing|risk|issue|fail|critical/i.test(m[1]) ? "negative" : "neutral" });
     });
   }
+  const threatInsights = parseThreatModelInsights(cleanedRaw);
+  if (threatInsights.length) thematic.push(...threatInsights);
   if (securityVerdict) thematic.unshift({ title: "Security Verdict", detail: securityVerdict, signal: /critical|high risk/i.test(securityVerdict) ? "negative" : /strong|good|excellent|low risk/i.test(securityVerdict) ? "positive" : "neutral" });
   if (scalabilityVerdict) thematic.unshift({ title: "Scalability Verdict", detail: scalabilityVerdict, signal: /critical|needs work|poor|bottleneck/i.test(scalabilityVerdict) ? "negative" : /strong|good|excellent/i.test(scalabilityVerdict) ? "positive" : "neutral" });
 
@@ -1655,10 +1671,20 @@ function renderParsedSecurityText(rawText) {
         experiments: roadmap
       } : null,
       {
+        label: "Report Metadata",
+        icon: "target",
+        content: "Extracted top-level metadata from raw analyzer output.",
+        items: [
+          { label: "Language / Framework", value: cleanedRaw.match(/Language\s*\/\s*Framework\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || "Not detected" },
+          { label: "Analysis Date", value: cleanedRaw.match(/Analysis Date\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || "Not detected" },
+          { label: "Files Analysed", value: cleanedRaw.match(/Files Analysed\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() || "Not detected" }
+        ]
+      },
+      {
         label: "Raw Report",
         icon: "target",
         content: "Original backend output for full fidelity.",
-        items: [{ label: "Details", value: cleanedRaw.slice(0, 2200) + (cleanedRaw.length > 2200 ? " …" : "") }]
+        items: [{ label: "Details", value: cleanedRaw.slice(0, 1000) + (cleanedRaw.length > 1000 ? " … (truncated)" : "") }]
       }
     ].filter(Boolean)
   };
